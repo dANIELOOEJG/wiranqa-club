@@ -1,5 +1,4 @@
-#
- Node
+# Node
 node_modules/
 dist/
 build/
@@ -9,38 +8,32 @@ build/
 *.log
 npm-debug.log*
 
-#
- OS
+# OS
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
 
-#
- IDE
+# IDE
 .vscode/
 .idea/
 *.iml
 
-#
- Database
+# Database
 *.sqlite
 *.db
 *.sql
 
-#
- Temp
+# Temp
 tmp/
 temp/
 *.tmp
 
-#
- Coverage
+# Coverage
 coverage/
 .nyc_output/
 
-#
- Misc
+# Misc
 *.pem
 *.key
 *.crt
