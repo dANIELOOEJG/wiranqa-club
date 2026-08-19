@@ -11,10 +11,15 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors());
 app.use(express.json());
 
-// Conexión a Supabase vía API REST (La solución infalible)
+// Conexión a Supabase vía API REST (Con la llave correcta y headers explícitos)
 const supabaseUrl = 'https://qwjjrwiurhyoszhlsdgd.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3ampyd2l1cmh5b3N6aGxzZGdkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjQwNzI4MjUsImV4cCI6MjA0MDY0ODgyNX0.h7X7V_7U7V_7U7V_7U7V_7U7V_7U';
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Creamos el cliente con los headers necesarios para autenticación
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: { persistSession: false },
+  headers: { 'apikey': supabaseKey }
+});
 
 console.log('✅ Conectado a Supabase vía API REST');
 
