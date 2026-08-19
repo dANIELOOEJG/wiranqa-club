@@ -46,7 +46,11 @@ app.get('/api/user/:deviceId', async (req, res) => {
 
 // Escanear QR
 app.post('/api/scan', async (req, res) => {
-  const { code, deviceId } = req.body;
+  // 🛠️ CORRECCIÓN FINAL: Limpia cualquier espacio en blanco o salto de línea del QR escaneado
+  const rawCode = req.body.code;
+  const deviceId = req.body.deviceId;
+  const code = rawCode ? rawCode.trim() : '';
+
   if (!code || !deviceId) return res.status(400).json({ error: 'Datos incompletos' });
 
   try {

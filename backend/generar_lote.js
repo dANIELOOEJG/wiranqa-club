@@ -1,16 +1,15 @@
-const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
-// Conexión a Supabase
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+// Conexión a Supabase vía API REST (La solución infalible)
+const supabaseUrl = 'https://qwjjrwiurhyoszhlsdgd.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3ampyd2l1cmh5b3N6aGxzZGdkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjQwNzI4MjUsImV4cCI6MjA0MDY0ODgyNX0.h7X7V_7U7V_7U7V_7U7V_7U7V_7U';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-const CANTIDAD = 1000; // <--- CAMBIA ESTO SI QUIERES MÁS O MENOS
+const CANTIDAD = 1000; // Puedes cambiar esto a 1000 cuando estés listo
 const CARPETA_QR = './qr_generados';
 const PREFIJO = "LOTE:Q002-2026";
 
@@ -23,39 +22,24 @@ async function generateLot() {
     }
 
     try {
-        // Limpiar base de datos
-        await pool.query('DROP TABLE IF EXISTS bottles');
-        await pool.query('DROP TABLE IF EXISTS rewards');
-
-        await pool.query(`
-            CREATE TABLE bottles (
-                id SERIAL PRIMARY KEY,
-                unique_code TEXT UNIQUE NOT NULL,
-                is_redeemed BOOLEAN DEFAULT FALSE,
-                redeemed_by TEXT,
-                redeemed_at TIMESTAMP
-            )
-        `);
-
-        await pool.query(`
-            CREATE TABLE rewards (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                cost INTEGER NOT NULL,
-                is_active BOOLEAN DEFAULT TRUE
-            )
-        `);
+        // Limpiar base de datos (API REST)
+        console.log('🧹 Limpiando tablas viejas...');
+        await supabase.from('bottles').delete().neq('id', 0);
+        await supabase.from('rewards').delete().neq('id', 0);
 
         console.log('🍺 Insertando botellas y generando imágenes QR...');
 
         for (let i = 1; i <= CANTIDAD; i++) {
             const code = `${PREFIJO}+${i}`;
             
-            // Insertar en BD
-            await pool.query(
-                'INSERT INTO bottles (unique_code) VALUES ($1)',
-                [code]
-            );
+            // Insertar en BD via API REST
+            const { error } = await supabase
+                .from('bottles')
+                .insert({ unique_code: code });
+
+            if (error) {
+                console.error(`❌ Error insertando ${code}:`, error.message);
+            }
 
             // Generar imagen QR
             const filePath = path.join(CARPETA_QR, `botella_${i}.png`);
@@ -72,22 +56,19 @@ async function generateLot() {
             }
         }
 
-        // Insertar premios
+        // Insertar premios de prueba
         console.log('🎁 Insertando premios de prueba...');
-        await pool.query(
-            `INSERT INTO rewards (name, cost) VALUES 
-            ('Cerveza WIRANQA', 6),
-            ('Vaso Shop WIRANQA', 3),
-            ('Combo Amigos', 30)`
-        );
+        await supabase.from('rewards').insert([
+            { name: 'Cerveza WIRANQA', cost: 6 },
+            { name: 'Vaso Shop WIRANQA', cost: 3 },
+            { name: 'Combo Amigos', cost: 30 }
+        ]);
 
         console.log(`✅ Lote de ${CANTIDAD} botellas y premios insertados en Supabase.`);
         console.log(`📁 Las ${CANTIDAD} imágenes QR se guardaron en: ${CARPETA_QR}`);
         console.log(`💡 Códigos generados: ${PREFIJO}+1 al +${CANTIDAD}.`);
     } catch (err) {
         console.error('❌ Error:', err.message);
-    } finally {
-        await pool.end();
     }
 }
 
