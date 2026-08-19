@@ -38,7 +38,8 @@ app.get('/api/user/:deviceId', async (req, res) => {
     if (result.rows.length === 0) return res.json({ points: 0 });
     res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('❌ Error en /api/user:', err.message);
+    res.status(500).json({ error: 'Error al obtener puntos', details: err.message });
   }
 });
 
@@ -75,8 +76,8 @@ app.post('/api/scan', async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('❌ Error en /api/scan:', err.message);
+    res.status(500).json({ error: 'Error al procesar el escaneo', details: err.message });
   }
 });
 
@@ -88,7 +89,8 @@ app.get('/api/rewards', async (req, res) => {
         const result = await pool.query('SELECT * FROM rewards WHERE is_active = true');
         res.json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('❌ Error en /api/rewards:', err.message);
+        res.status(500).json({ error: 'Error al cargar premios', details: err.message });
     }
 });
 
@@ -126,8 +128,8 @@ app.post('/api/redeem', async (req, res) => {
         });
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        console.error('❌ Error en /api/redeem:', err.message);
+        res.status(500).json({ error: 'Error al canjear el premio', details: err.message });
     }
 });
 
