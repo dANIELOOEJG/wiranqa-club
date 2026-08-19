@@ -10,7 +10,7 @@ function App() {
   const [scanning, setScanning] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [level, setLevel] = useState('WIRANQERO NOVATO');
-  const [view, setView] = useState('home'); // 'home' o 'catalog'
+  const [view, setView] = useState('home');
   const [rewards, setRewards] = useState([]);
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -83,17 +83,26 @@ function App() {
     }
   };
 
+  // --- FUNCIÓN DE ESCANEO MEJORADA CON TIMEOUT Y CIERRE AUTOMÁTICO ---
   const processScan = async (code, id) => {
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
     const cleanCode = code.trim();
 
+    // Creamos un controlador para poder cancelar la petición si tarda más de 10 segundos
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     try {
       const res = await fetch('https://wiranqa-backend.onrender.com/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: cleanCode, deviceId: id })
+        body: JSON.stringify({ code: cleanCode, deviceId: id }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId); // Limpiamos el timeout si el servidor respondió a tiempo
+
       const data = await res.json();
       setLoading(false);
       
@@ -103,11 +112,22 @@ function App() {
         setMessage(data.message);
       } else {
         setMessage(data.message);
+        // Si el mensaje indica que ya fue usado, cerramos la cámara automáticamente
+        if (data.message.includes('ya fue disfrutada') || data.message.includes('ya fue canjeada')) {
+          setScanning(false);
+        }
       }
     } catch (error) {
       setLoading(false);
-      setMessage('❌ Error de conexión');
+      setScanning(false); // Cerramos la cámara si hubo cualquier error
+      
+      if (error.name === 'AbortError') {
+        setMessage('❌ El servidor tardó demasiado en responder. Por favor, intenta de nuevo.');
+      } else {
+        setMessage('❌ Error de conexión. Verifica tu internet o intenta de nuevo.');
+      }
     } finally {
+      // Cerramos cualquier mensaje de carga después de 4 segundos
       setTimeout(() => setMessage(''), 4000);
     }
   };
@@ -119,7 +139,6 @@ function App() {
     }
   };
 
-  // Lógica para canjear premios
   const handleRedeem = async (rewardId, cost) => {
     if (points < cost) {
       setMessage(`❌ No tienes suficientes estrellas. Necesitas ${cost}.`);
@@ -170,7 +189,6 @@ function App() {
             </div>
           )}
 
-          {/* Navegación entre Home y Catálogo */}
           <div className="flex justify-center gap-4 mb-4">
             <button 
               onClick={() => setView('home')}
@@ -186,7 +204,6 @@ function App() {
             </button>
           </div>
 
-          {/* VISTA HOME (ESCÁNER Y ESTRELLAS) */}
           {view === 'home' && (
             <>
               <div className="flex items-center justify-center gap-2 mb-1">
@@ -226,7 +243,6 @@ function App() {
             </>
           )}
 
-          {/* VISTA CATÁLOGO */}
           {view === 'catalog' && (
             <div className="mt-4">
               <h3 className="text-lg font-bold text-slate-800 mb-2">🎁 Catálogo de Premios</h3>
