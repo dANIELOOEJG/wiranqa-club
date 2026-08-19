@@ -10,11 +10,12 @@ function App() {
   const [scanning, setScanning] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [level, setLevel] = useState('WIRANQERO NOVATO');
+  const [view, setView] = useState('home'); // 'home' o 'catalog'
+  const [rewards, setRewards] = useState([]);
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
 
-  // Generar o recuperar ID del dispositivo
   const getDeviceId = () => {
     let id = localStorage.getItem('wiranqa_device_id');
     if (!id) {
@@ -36,10 +37,10 @@ function App() {
     const id = getDeviceId();
     setDeviceId(id);
     checkBackend(id);
+    fetchRewards();
     handleAutoScanFromURL(id);
   }, []);
 
-  // CORREGIDO: Se añadió /health al final de la URL
   const checkBackend = async (id) => {
     try {
       const res = await fetch('https://wiranqa-backend.onrender.com/health');
@@ -54,7 +55,6 @@ function App() {
     return false;
   };
 
-  // CORREGIDO: Se cambió localhost por la URL de Render
   const fetchUserPoints = async (id) => {
     try {
       const res = await fetch(`https://wiranqa-backend.onrender.com/api/user/${id}`);
@@ -63,6 +63,14 @@ function App() {
         setPoints(data.points);
         setLevel(getLevelFromPoints(data.points));
       }
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchRewards = async () => {
+    try {
+      const res = await fetch('https://wiranqa-backend.onrender.com/api/rewards');
+      const data = await res.json();
+      setRewards(data);
     } catch (e) { console.error(e); }
   };
 
@@ -75,7 +83,6 @@ function App() {
     }
   };
 
-  // CORREGIDO: Se cambió localhost por la URL de Render
   const processScan = async (code, id) => {
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
@@ -112,6 +119,37 @@ function App() {
     }
   };
 
+  // Lógica para canjear premios
+  const handleRedeem = async (rewardId, cost) => {
+    if (points < cost) {
+      setMessage(`❌ No tienes suficientes estrellas. Necesitas ${cost}.`);
+      setTimeout(() => setMessage(''), 4000);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('https://wiranqa-backend.onrender.com/api/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId, rewardId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPoints(data.data.points);
+        setLevel(getLevelFromPoints(data.data.points));
+        setMessage(data.message);
+      } else {
+        setMessage(data.message);
+      }
+    } catch (error) {
+      setMessage('❌ Error al canjear el premio');
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 border border-amber-200 relative overflow-hidden">
@@ -132,43 +170,94 @@ function App() {
             </div>
           )}
 
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="text-4xl">⭐</span>
-            <span className="text-5xl font-extrabold text-slate-800">{points}</span>
-          </div>
-          <div className="text-sm font-bold uppercase tracking-wider text-amber-600">
-            {level}
+          {/* Navegación entre Home y Catálogo */}
+          <div className="flex justify-center gap-4 mb-4">
+            <button 
+              onClick={() => setView('home')}
+              className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'home' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}
+            >
+              🏠 Inicio
+            </button>
+            <button 
+              onClick={() => setView('catalog')}
+              className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'catalog' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}
+            >
+              🎁 Premios
+            </button>
           </div>
 
-          <div className="mt-4">
-            {scanning ? (
-              <div className="rounded-xl overflow-hidden border-2 border-amber-600 bg-black relative">
-                <QrReader
-                  delay={300}
-                  onError={console.error}
-                  onScan={handleScan}
-                  style={{ width: '100%', height: '250px', objectFit: 'cover' }}
-                  constraints={{ video: { facingMode: cameraMode } }}
-                />
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-44 h-44 border-2 border-amber-500 rounded-xl opacity-80"></div>
-                </div>
-                <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">
-                  Cancelar
-                </button>
+          {/* VISTA HOME (ESCÁNER Y ESTRELLAS) */}
+          {view === 'home' && (
+            <>
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <span className="text-4xl">⭐</span>
+                <span className="text-5xl font-extrabold text-slate-800">{points}</span>
               </div>
-            ) : (
-              <button 
-                onClick={() => setScanning(true)} 
-                disabled={loading || backendStatus !== 'Online'}
-                className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
-                {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
-              </button>
-            )}
-          </div>
+              <div className="text-sm font-bold uppercase tracking-wider text-amber-600">
+                {level}
+              </div>
+
+              <div className="mt-4">
+                {scanning ? (
+                  <div className="rounded-xl overflow-hidden border-2 border-amber-600 bg-black relative">
+                    <QrReader
+                      delay={300}
+                      onError={console.error}
+                      onScan={handleScan}
+                      style={{ width: '100%', height: '250px', objectFit: 'cover' }}
+                      constraints={{ video: { facingMode: cameraMode } }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-44 h-44 border-2 border-amber-500 rounded-xl opacity-80"></div>
+                    </div>
+                    <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => setScanning(true)} 
+                    disabled={loading || backendStatus !== 'Online'}
+                    className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
+                    {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* VISTA CATÁLOGO */}
+          {view === 'catalog' && (
+            <div className="mt-4">
+              <h3 className="text-lg font-bold text-slate-800 mb-2">🎁 Catálogo de Premios</h3>
+              <p className="text-sm text-slate-500 mb-4">Tienes ⭐ {points} estrellas</p>
+              
+              <div className="space-y-3">
+                {rewards.length === 0 ? (
+                  <p className="text-sm text-slate-400">Cargando premios...</p>
+                ) : (
+                  rewards.map((reward) => (
+                    <div key={reward.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <div className="text-left">
+                        <h4 className="font-bold text-slate-800">{reward.name}</h4>
+                        <p className="text-sm text-slate-500">Costo: ⭐ {reward.cost}</p>
+                      </div>
+                      <button 
+                        onClick={() => handleRedeem(reward.id, reward.cost)}
+                        disabled={loading || points < reward.cost}
+                        className={`px-4 py-2 rounded-lg font-bold text-sm transition ${points >= reward.cost ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
+                      >
+                        {points >= reward.cost ? 'Canjear' : 'Faltan ⭐'}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
 
           {message && (
-            <div className={`mt-4 p-3 rounded-lg text-sm font-medium ${message.includes('✅') || message.includes('🎉') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            <div className={`mt-4 p-3 rounded-lg text-sm font-medium ${message.includes('✅') || message.includes('🎉') || message.includes('¡') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
               {message}
             </div>
           )}
