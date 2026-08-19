@@ -39,9 +39,10 @@ function App() {
     handleAutoScanFromURL(id);
   }, []);
 
+  // CORREGIDO: Se añadió /health al final de la URL
   const checkBackend = async (id) => {
     try {
-      const res = await fetch('http://localhost:3000/health');
+      const res = await fetch('https://wiranqa-backend.onrender.com/health');
       if (res.ok) {
         setBackendStatus('Online');
         fetchUserPoints(id);
@@ -53,9 +54,10 @@ function App() {
     return false;
   };
 
+  // CORREGIDO: Se cambió localhost por la URL de Render
   const fetchUserPoints = async (id) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/user/${id}`);
+      const res = await fetch(`https://wiranqa-backend.onrender.com/api/user/${id}`);
       const data = await res.json();
       if (data.points !== undefined) {
         setPoints(data.points);
@@ -73,13 +75,14 @@ function App() {
     }
   };
 
+  // CORREGIDO: Se cambió localhost por la URL de Render
   const processScan = async (code, id) => {
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
     const cleanCode = code.trim();
 
     try {
-      const res = await fetch('http://localhost:3000/api/scan', {
+      const res = await fetch('https://wiranqa-backend.onrender.com/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: cleanCode, deviceId: id })
