@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><title>WIRANQA Test</title></head>
+<body>
+  <h1>🍺 WIRANQA CLUB</h1>
+  <p>El servidor está funcionando</p>
+  <p id="status">Verificando backend...</p>
+  <script>
+    fetch('http://localhost:3000/health')
+      .then(r => r.json())
+      .then(d => document.getElementById('status').textContent = '✅ Backend conectado: ' + d.message)
+      .catch(() => document.getElementById('status').textContent = '❌ Backend no disponible');
+  </script>
+</body>
+</html>

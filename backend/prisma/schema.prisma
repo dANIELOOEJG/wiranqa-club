@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  phone         String?   @unique
+  email         String?   @unique
+  password      String?
+  deviceId      String?   @unique
+  qrCode        String?   @unique
+  qrCodeData    String?
+  stars         Int       @default(0)
+  totalBottles  Int       @default(0)
+  level         String    @default("EXPLORADOR")
+  cardNumber    String?   @unique
+  cardQR        String?
+  joinDate      DateTime  @default(now())
+  isActive      Boolean   @default(true)
+  role          String    @default("CLIENTE")
+  lastActivity  DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  bottles       Bottle[]
+  redemptions   Redemption[]
+  notifications Notification[]
+  scans         Scan[]
+
+  @@index([phone])
+  @@index([deviceId])
+  @@index([qrCode])
+  @@map("users")
+}
+
+model Bottle {
+  id            String    @id @default(cuid())
+  qrCode        String    @unique
+  qrCodeData    String
+  batchNumber   String?
+  productName   String    @default("Cerveza WIRANQA")
+  isConsumed    Boolean   @default(false)
+  consumedBy    String?
+  consumedAt    DateTime?
+  starsAwarded  Int       @default(3)
+  createdAt     DateTime  @default(now())
+  
+  user          User?     @relation(fields: [consumedBy], references: [id])
+  scans         Scan[]
+  
+  @@index([qrCode])
+  @@index([isConsumed])
+  @@map("bottles")
+}
+
+model Redemption {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  rewardName    String
+  rewardType    String
+  starsSpent    Int
+  description   String?
+  status        String    @default("PENDIENTE")
+  qrCode        String?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([status])
+  @@map("redemptions")
+}
+
+model Scan {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  bottleId      String
+  bottle        Bottle    @relation(fields: [bottleId], references: [id])
+  ipAddress     String?
+  userAgent     String?
+  location      String?
+  createdAt     DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([bottleId])
+  @@map("scans")
+}
+
+model Reward {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  description   String
+  starsCost     Int
+  type          String
+  stock         Int       @default(0)
+  image         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  
+  @@map("rewards")
+}
+
+model Notification {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  title         String
+  message       String
+  type          String
+  isRead        Boolean   @default(false)
+  readAt        DateTime?
+  createdAt     DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
