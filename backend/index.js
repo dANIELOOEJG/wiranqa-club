@@ -23,10 +23,12 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// Ruta de salud
+// --- RUTA DE SALUD ---
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'WIRANQA Backend running' });
 });
+
+// --- RUTAS DE USUARIO Y ESCANEO ---
 
 // Obtener puntos de un usuario
 app.get('/api/user/:deviceId', async (req, res) => {
@@ -78,6 +80,58 @@ app.post('/api/scan', async (req, res) => {
   }
 });
 
+// --- RUTAS DE CATÁLOGO Y CANJE DE PREMIOS ---
+
+// Obtener lista de premios activos
+app.get('/api/rewards', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM rewards WHERE is_active = true');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Canjear un premio
+app.post('/api/redeem', async (req, res) => {
+    const { deviceId, rewardId } = req.body;
+    if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
+
+    try {
+        // 1. Obtener el costo del premio
+        const rewardResult = await pool.query('SELECT cost FROM rewards WHERE id = $1 AND is_active = true', [rewardId]);
+        if (rewardResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Premio no disponible' });
+        }
+        const cost = rewardResult.rows[0].cost;
+
+        // 2. Verificar saldo del usuario
+        const userResult = await pool.query('SELECT points FROM users WHERE device_id = $1', [deviceId]);
+        if (userResult.rows.length === 0 || userResult.rows[0].points < cost) {
+            return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
+        }
+
+        // 3. Descontar puntos
+        await pool.query(
+            'UPDATE users SET points = points - $1 WHERE device_id = $2',
+            [cost, deviceId]
+        );
+
+        // 4. Devolver nuevo saldo
+        const newBalance = await pool.query('SELECT points FROM users WHERE device_id = $1', [deviceId]);
+        res.json({ 
+            success: true, 
+            message: `🎉 ¡Has canjeado tu premio! Te quedan ${newBalance.rows[0].points} estrellas.`,
+            data: newBalance.rows[0]
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// --- INICIAR SERVIDOR ---
 app.listen(PORT, () => {
   console.log(`🚀 WIRANQA Backend en línea en http://localhost:${PORT}`);
 });
