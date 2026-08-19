@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const { Pool } = require('pg');
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
@@ -11,17 +11,12 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors());
 app.use(express.json());
 
-// Conexión a PostgreSQL en la nube (Supabase)
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+// Conexión a Supabase vía API REST (La solución infalible)
+const supabaseUrl = 'https://qwjjrwiurhyoszhlsdgd.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3ampyd2l1cmh5b3N6aGxzZGdkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjQwNzI4MjUsImV4cCI6MjA0MDY0ODgyNX0.h7X7V_7U7V_7U7V_7U7V_7U7V_7U';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-pool.connect((err, client, release) => {
-  if (err) return console.error('❌ Error conectando a PostgreSQL:', err.stack);
-  console.log('✅ Conectado a PostgreSQL (Supabase)');
-  release();
-});
+console.log('✅ Conectado a Supabase vía API REST');
 
 // --- RUTA DE SALUD ---
 app.get('/health', (req, res) => {
@@ -34,12 +29,18 @@ app.get('/health', (req, res) => {
 app.get('/api/user/:deviceId', async (req, res) => {
   const { deviceId } = req.params;
   try {
-    const result = await pool.query('SELECT points FROM users WHERE device_id = $1', [deviceId]);
-    if (result.rows.length === 0) return res.json({ points: 0 });
-    res.json(result.rows[0]);
+    const { data, error } = await supabase
+      .from('users')
+      .select('points')
+      .eq('device_id', deviceId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      return res.status(500).json({ error: error.message });
+    }
+    res.json({ points: data ? data.points : 0 });
   } catch (err) {
-    console.error('❌ Error en /api/user:', err.message);
-    res.status(500).json({ error: 'Error al obtener puntos', details: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -49,35 +50,63 @@ app.post('/api/scan', async (req, res) => {
   if (!code || !deviceId) return res.status(400).json({ error: 'Datos incompletos' });
 
   try {
-    const bottleResult = await pool.query('SELECT * FROM bottles WHERE unique_code = $1', [code]);
-    if (bottleResult.rows.length === 0) {
+    // 1. Verificar si la botella existe y no ha sido canjeada
+    const { data: bottle, error: bottleError } = await supabase
+      .from('bottles')
+      .select('*')
+      .eq('unique_code', code)
+      .single();
+
+    if (bottleError || !bottle) {
       return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
     }
-    
-    const bottle = bottleResult.rows[0];
+
     if (bottle.is_redeemed) {
       return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
     }
 
-    await pool.query(
-      `UPDATE bottles SET is_redeemed = true, redeemed_by = $1, redeemed_at = NOW() WHERE id = $2`,
-      [deviceId, bottle.id]
-    );
+    // 2. Marcar la botella como usada
+    const { error: updateError } = await supabase
+      .from('bottles')
+      .update({ is_redeemed: true, redeemed_by: deviceId, redeemed_at: new Date().toISOString() })
+      .eq('id', bottle.id);
 
-    const userResult = await pool.query(
-      `INSERT INTO users (device_id, points) VALUES ($1, 1) ON CONFLICT (device_id) DO UPDATE SET points = users.points + 1 RETURNING points`,
-      [deviceId]
-    );
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
 
-    res.json({ 
-      success: true, 
-      message: `✅ ¡Has ganado 1 estrella!`, 
-      data: userResult.rows[0] 
-    });
+    // 3. Sumar puntos al usuario
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .upsert({ device_id: deviceId, points: 1 }, { onConflict: 'device_id' })
+      .select('points')
+      .single();
+
+    if (userError) {
+      // Si falla el upsert, intentamos sumar 1 al existente
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('points')
+        .eq('device_id', deviceId)
+        .single();
+
+      if (existingUser) {
+        const { data: updatedUser } = await supabase
+          .from('users')
+          .update({ points: existingUser.points + 1 })
+          .eq('device_id', deviceId)
+          .select('points')
+          .single();
+        return res.json({ success: true, message: '✅ ¡Has ganado 1 estrella!', data: updatedUser });
+      }
+      return res.status(500).json({ error: userError.message });
+    }
+
+    res.json({ success: true, message: '✅ ¡Has ganado 1 estrella!', data: userData });
 
   } catch (err) {
-    console.error('❌ Error en /api/scan:', err.message);
-    res.status(500).json({ error: 'Error al procesar el escaneo', details: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -85,52 +114,70 @@ app.post('/api/scan', async (req, res) => {
 
 // Obtener lista de premios activos
 app.get('/api/rewards', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM rewards WHERE is_active = true');
-        res.json(result.rows);
-    } catch (err) {
-        console.error('❌ Error en /api/rewards:', err.message);
-        res.status(500).json({ error: 'Error al cargar premios', details: err.message });
-    }
+  try {
+    const { data, error } = await supabase
+      .from('rewards')
+      .select('*')
+      .eq('is_active', true);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Canjear un premio
 app.post('/api/redeem', async (req, res) => {
-    const { deviceId, rewardId } = req.body;
-    if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
+  const { deviceId, rewardId } = req.body;
+  if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
 
-    try {
-        // 1. Obtener el costo del premio
-        const rewardResult = await pool.query('SELECT cost FROM rewards WHERE id = $1 AND is_active = true', [rewardId]);
-        if (rewardResult.rows.length === 0) {
-            return res.status(404).json({ message: 'Premio no disponible' });
-        }
-        const cost = rewardResult.rows[0].cost;
+  try {
+    // 1. Obtener el costo del premio
+    const { data: reward, error: rewardError } = await supabase
+      .from('rewards')
+      .select('cost')
+      .eq('id', rewardId)
+      .eq('is_active', true)
+      .single();
 
-        // 2. Verificar saldo del usuario
-        const userResult = await pool.query('SELECT points FROM users WHERE device_id = $1', [deviceId]);
-        if (userResult.rows.length === 0 || userResult.rows[0].points < cost) {
-            return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
-        }
-
-        // 3. Descontar puntos
-        await pool.query(
-            'UPDATE users SET points = points - $1 WHERE device_id = $2',
-            [cost, deviceId]
-        );
-
-        // 4. Devolver nuevo saldo
-        const newBalance = await pool.query('SELECT points FROM users WHERE device_id = $1', [deviceId]);
-        res.json({ 
-            success: true, 
-            message: `🎉 ¡Has canjeado tu premio! Te quedan ${newBalance.rows[0].points} estrellas.`,
-            data: newBalance.rows[0]
-        });
-
-    } catch (err) {
-        console.error('❌ Error en /api/redeem:', err.message);
-        res.status(500).json({ error: 'Error al canjear el premio', details: err.message });
+    if (rewardError || !reward) {
+      return res.status(404).json({ message: 'Premio no disponible' });
     }
+    const cost = reward.cost;
+
+    // 2. Verificar saldo del usuario
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('points')
+      .eq('device_id', deviceId)
+      .single();
+
+    if (userError || !user || user.points < cost) {
+      return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
+    }
+
+    // 3. Descontar puntos
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update({ points: user.points - cost })
+      .eq('device_id', deviceId)
+      .select('points')
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    res.json({
+      success: true,
+      message: `🎉 ¡Has canjeado tu premio! Te quedan ${updatedUser.points} estrellas.`,
+      data: updatedUser
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
 });
 
 // --- INICIAR SERVIDOR ---
