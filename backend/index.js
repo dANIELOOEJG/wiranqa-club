@@ -72,11 +72,14 @@ app.get('/api/user/:deviceId', async (req, res) => {
   }
 });
 
-// Escanear QR (Lógica corregida y robustecida)
+// Escanear QR (Lógica CORREGIDA y robusta)
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
-  const deviceId = req.body.deviceId;
+  const rawDeviceId = req.body.deviceId;
+  
+  // 🛠️ CORRECCIÓN: Limpiamos el ID del dispositivo de espacios en blanco y saltos de línea
   const code = rawCode ? rawCode.trim() : '';
+  const deviceId = rawDeviceId ? rawDeviceId.trim() : '';
 
   if (!code || !deviceId) {
     return res.status(400).json({ message: 'Datos incompletos' });
@@ -108,55 +111,55 @@ app.post('/api/scan', async (req, res) => {
       return res.status(500).json({ error: updateError.message });
     }
 
-    // 3. Sumar puntos al usuario (CORRECCIÓN PRINCIPAL AQUÍ)
-    // Intentamos sumar 1 punto. Si el usuario no existe, lo creamos con 1 punto.
-    const { data: userData, error: userError } = await supabase
+    // 3. Sumar puntos al usuario (Lógica CORREGIDA y robusta)
+    // Primero verificamos si el usuario ya existe
+    const { data: existingUser } = await supabase
       .from('users')
-      .upsert(
-        { device_id: deviceId, points: 1 }, 
-        { onConflict: 'device_id', ignoreDuplicates: false }
-      )
       .select('points')
-      .single();
+      .eq('device_id', deviceId)
+      .maybeSingle();
 
     let finalPoints = 1;
     let levelInfo = getLevel(1);
 
-    if (userError) {
-      // Si falla el upsert (por ejemplo, si el usuario ya existe pero no se pudo actualizar),
-      // intentamos sumar 1 al existente de forma manual.
-      const { data: existingUser } = await supabase
+    if (existingUser) {
+      // Si existe, sumamos 1
+      finalPoints = existingUser.points + 1;
+      const { data: updatedUser, error: updateError } = await supabase
         .from('users')
-        .select('points')
+        .update({ points: finalPoints })
         .eq('device_id', deviceId)
+        .select('points')
         .single();
 
-      if (existingUser) {
-        finalPoints = existingUser.points + 1;
-        const { data: updatedUser } = await supabase
-          .from('users')
-          .update({ points: finalPoints })
-          .eq('device_id', deviceId)
-          .select('points')
-          .single();
-        levelInfo = getLevel(finalPoints);
-        return res.json({ 
-          success: true, 
-          message: `✅ ¡Has ganado 1 estrella!`, 
-          data: { points: finalPoints, level: levelInfo } 
-        });
+      if (updateError) {
+        return res.status(500).json({ error: updateError.message });
       }
-      return res.status(500).json({ error: userError.message });
+      levelInfo = getLevel(finalPoints);
+      return res.json({ 
+        success: true, 
+        message: `✅ ¡Has ganado 1 estrella!`, 
+        data: { points: finalPoints, level: levelInfo } 
+      });
+    } else {
+      // Si no existe, lo creamos con 1 punto
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({ device_id: deviceId, points: 1 })
+        .select('points')
+        .single();
+
+      if (createError) {
+        return res.status(500).json({ error: createError.message });
+      }
+      finalPoints = 1;
+      levelInfo = getLevel(1);
+      return res.json({ 
+        success: true, 
+        message: `✅ ¡Has ganado 1 estrella!`, 
+        data: { points: 1, level: levelInfo } 
+      });
     }
-
-    finalPoints = userData.points;
-    levelInfo = getLevel(finalPoints);
-
-    res.json({ 
-      success: true, 
-      message: `✅ ¡Has ganado 1 estrella!`, 
-      data: { points: finalPoints, level: levelInfo } 
-    });
 
   } catch (err) {
     console.error(err);
