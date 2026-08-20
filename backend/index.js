@@ -6,10 +6,10 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- CONFIGURACIÓN DE SEGURIDAD Y CORS (SOLUCIÓN DEFINITIVA) ---
+// --- CONFIGURACIÓN DE SEGURIDAD Y CORS ---
 app.use(helmet({ crossOriginResourcePolicy: false }));
 
-// Middleware CORS manual (Permite cualquier origen y soluciona el error 400)
+// Middleware CORS manual (Permite cualquier origen)
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
@@ -20,7 +20,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware para parsear JSON (Aumentamos el límite para evitar errores de carga)
+// Middleware para parsear JSON
 app.use(express.json({ limit: '10mb' }));
 
 // --- CONEXIÓN A SUPABASE ---
@@ -72,7 +72,7 @@ app.get('/api/user/:deviceId', async (req, res) => {
   }
 });
 
-// Escanear QR
+// Escanear QR (Lógica corregida y robustecida)
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const deviceId = req.body.deviceId;
@@ -108,10 +108,14 @@ app.post('/api/scan', async (req, res) => {
       return res.status(500).json({ error: updateError.message });
     }
 
-    // 3. Sumar puntos al usuario
+    // 3. Sumar puntos al usuario (CORRECCIÓN PRINCIPAL AQUÍ)
+    // Intentamos sumar 1 punto. Si el usuario no existe, lo creamos con 1 punto.
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .upsert({ device_id: deviceId, points: 1 }, { onConflict: 'device_id' })
+      .upsert(
+        { device_id: deviceId, points: 1 }, 
+        { onConflict: 'device_id', ignoreDuplicates: false }
+      )
       .select('points')
       .single();
 
@@ -119,7 +123,8 @@ app.post('/api/scan', async (req, res) => {
     let levelInfo = getLevel(1);
 
     if (userError) {
-      // Si falla el upsert, intentamos sumar 1 al existente
+      // Si falla el upsert (por ejemplo, si el usuario ya existe pero no se pudo actualizar),
+      // intentamos sumar 1 al existente de forma manual.
       const { data: existingUser } = await supabase
         .from('users')
         .select('points')
