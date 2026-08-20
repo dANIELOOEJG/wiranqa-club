@@ -25,40 +25,35 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 
 console.log('✅ Conectado a Supabase vía API REST');
 
+const levelLegend = {
+  1: { title: 'Descubre WIRANQA', emoji: '🍺', desc: 'El inicio de tu viaje cervecero.' },
+  2: { title: 'WIRANQERO NOVATO', emoji: '🌱', desc: 'Estás empezando a disfrutar del buen sabor.' },
+  3: { title: 'WIRANQERO EXPERTO', emoji: '⭐', desc: 'Ya sabes lo que es una buena cerveza artesanal.' },
+  4: { title: 'MAESTRO WIRANQERO', emoji: '🍺', desc: 'Un conocedor del lúpulo y la malta.' },
+  5: { title: 'LEYENDA AYACUCHANA', emoji: '🏆', desc: 'Eres parte de la historia de WIRANQA.' }
+};
+
 const getLevel = (points) => {
-  if (points >= 100) return { id: 5, title: '🏆 LEYENDA AYACUCHANA', defaultNickname: 'Leyenda WIRANQA' };
-  if (points >= 50) return { id: 4, title: '🍺 MAESTRO WIRANQERO', defaultNickname: 'Maestro Cervecero' };
-  if (points >= 25) return { id: 3, title: '⭐ WIRANQERO EXPERTO', defaultNickname: 'Experto en Lúpulo' };
-  if (points >= 10) return { id: 2, title: '🌱 WIRANQERO NOVATO', defaultNickname: 'Nuevo Catador' };
-  return { id: 1, title: '🍺 Descubre WIRANQA', defaultNickname: 'Viajero WIRANQA' };
+  if (points >= 100) return { id: 5, ...levelLegend[5], defaultNickname: 'Leyenda WIRANQA' };
+  if (points >= 50) return { id: 4, ...levelLegend[4], defaultNickname: 'Maestro Cervecero' };
+  if (points >= 25) return { id: 3, ...levelLegend[3], defaultNickname: 'Experto en Lúpulo' };
+  if (points >= 10) return { id: 2, ...levelLegend[2], defaultNickname: 'Nuevo Catador' };
+  return { id: 1, ...levelLegend[1], defaultNickname: 'Viajero WIRANQA' };
 };
 
 app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
 
-// --- RUTAS DE USUARIO ---
 app.get('/api/user/:deviceId', async (req, res) => {
   const { deviceId } = req.params;
   try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('points, nickname, name, dni, email')
-      .eq('device_id', deviceId)
-      .single();
-
-    if (error && error.code !== 'PGRST116') {
-      return res.status(500).json({ error: `Error al obtener el usuario: ${error.message}` });
-    }
-
-    const { data: history, error: historyError } = await supabase
-      .from('history')
-      .select('unique_code, redeemed_at')
-      .eq('device_id', deviceId)
-      .order('redeemed_at', { ascending: false });
+    const { data: user } = await supabase.from('users').select('points, nickname, name, dni, email').eq('device_id', deviceId).single();
+    const { data: history } = await supabase.from('history').select('unique_code, redeemed_at').eq('device_id', deviceId).order('redeemed_at', { ascending: false });
 
     const formattedHistory = (history || []).map(item => {
       let displayName = 'Botella WIRANQA';
       if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
       if (item.unique_code.includes('Combo')) displayName = 'Combo Amigos';
+      if (item.unique_code.includes('Canje')) displayName = 'Canje: ' + item.unique_code.replace('Canje: ', '');
       return { ...item, displayName };
     });
 
@@ -68,7 +63,8 @@ app.get('/api/user/:deviceId', async (req, res) => {
     const stats = {
       totalBottles: formattedHistory.filter(h => h.displayName === 'Botella WIRANQA').length,
       totalShops: formattedHistory.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
-      totalCombos: formattedHistory.filter(h => h.displayName === 'Combo Amigos').length
+      totalCombos: formattedHistory.filter(h => h.displayName === 'Combo Amigos').length,
+      totalRedeems: formattedHistory.filter(h => h.displayName.includes('Canje')).length
     };
 
     res.json({
@@ -83,33 +79,29 @@ app.get('/api/user/:deviceId', async (req, res) => {
     });
   } catch (err) {
     console.error('❌ Error en /api/user:', err.message);
-    res.status(500).json({ error: 'Error interno del servidor al obtener usuario' });
+    res.status(500).json({ error: 'Error interno' });
   }
 });
 
 app.post('/api/user/update', async (req, res) => {
   const { deviceId, nickname } = req.body;
   if (!deviceId || !nickname) return res.status(400).json({ error: 'Datos incompletos' });
-  const { error } = await supabase.from('users').update({ nickname }).eq('device_id', deviceId);
-  if (error) return res.status(500).json({ error: error.message });
+  await supabase.from('users').update({ nickname }).eq('device_id', deviceId);
   res.json({ success: true });
 });
 
 app.post('/api/user/register', async (req, res) => {
   const { deviceId, name, dni, email } = req.body;
   if (!deviceId || !name || !dni || !email) return res.status(400).json({ error: 'Datos incompletos' });
-  const { error } = await supabase.from('users').update({ name, dni, email }).eq('device_id', deviceId);
-  if (error) return res.status(500).json({ error: error.message });
+  await supabase.from('users').update({ name, dni, email }).eq('device_id', deviceId);
   res.json({ success: true });
 });
 
-// --- ESCANEAR QR ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
   const code = rawCode ? rawCode.trim() : '';
   const deviceId = rawDeviceId ? rawDeviceId.trim() : '';
-
   if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
@@ -117,8 +109,8 @@ app.post('/api/scan', async (req, res) => {
     if (!bottle) return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
     if (bottle.is_redeemed) return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
 
-    await supabase.from('bottles').update({ is_redeemed: true, redeemed_by: deviceId, redeemed_at: new Date().toISOString() }).eq('id', bottle.id);
-    await supabase.from('history').insert({ device_id: deviceId, unique_code: code, redeemed_at: new Date().toISOString() });
+    await supabase.from('bottles').update({ is_redeemed: true }).eq('id', bottle.id);
+    await supabase.from('history').insert({ device_id: deviceId, unique_code: code });
 
     const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
     let finalPoints = 1;
@@ -130,11 +122,11 @@ app.post('/api/scan', async (req, res) => {
     }
 
     const { data: history } = await supabase.from('history').select('unique_code, redeemed_at').eq('device_id', deviceId).order('redeemed_at', { ascending: false });
-
     const formattedHistory = (history || []).map(item => {
       let displayName = 'Botella WIRANQA';
       if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
       if (item.unique_code.includes('Combo')) displayName = 'Combo Amigos';
+      if (item.unique_code.includes('Canje')) displayName = 'Canje: ' + item.unique_code.replace('Canje: ', '');
       return { ...item, displayName };
     });
 
@@ -145,14 +137,12 @@ app.post('/api/scan', async (req, res) => {
     });
   } catch (err) {
     console.error('❌ Error crítico en /api/scan:', err.message);
-    res.status(500).json({ message: 'Error interno del servidor al procesar el escaneo' });
+    res.status(500).json({ message: 'Error interno del servidor' });
   }
 });
 
-// --- CATÁLOGO DE PREMIOS ---
 app.get('/api/rewards', async (req, res) => {
   try {
-    // ✅ INSERTAMOS LOS PREMIOS SI NO EXISTEN
     const { count } = await supabase.from('rewards').select('*', { count: 'exact', head: true });
     if (count === 0) {
       await supabase.from('rewards').insert([
@@ -162,27 +152,28 @@ app.get('/api/rewards', async (req, res) => {
         { name: 'Combo Amigos (5+ personas)', cost: 100, description: '1 ronda gratis de vasos shop' }
       ]);
     }
-    const { data, error } = await supabase.from('rewards').select('*');
-    if (error) return res.status(500).json({ error: error.message });
+    const { data } = await supabase.from('rewards').select('*');
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// --- CANJEAR PREMIO ---
 app.post('/api/redeem', async (req, res) => {
   const { deviceId, rewardId } = req.body;
   if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
 
   try {
-    const { data: reward } = await supabase.from('rewards').select('cost').eq('id', rewardId).single();
+    const { data: reward } = await supabase.from('rewards').select('cost, name').eq('id', rewardId).single();
     if (!reward) return res.status(404).json({ message: 'Premio no disponible' });
 
     const { data: user } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
     if (!user || user.points < reward.cost) return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
 
     await supabase.from('users').update({ points: user.points - reward.cost }).eq('device_id', deviceId);
+    // Guardar en el historial como canje
+    await supabase.from('history').insert({ device_id: deviceId, unique_code: `Canje: ${reward.name}` });
+
     const { data: updatedUser } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
 
     res.json({
@@ -192,7 +183,7 @@ app.post('/api/redeem', async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    res.status(500).json({ error: 'Error interno' });
   }
 });
 
