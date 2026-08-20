@@ -12,6 +12,7 @@ function App() {
   const [level, setLevel] = useState({ id: 1, title: '🍺 Descubre WIRANQA', defaultNickname: 'Viajero WIRANQA' });
   const [view, setView] = useState('home');
   const [rewards, setRewards] = useState([]);
+  const [stats, setStats] = useState({ totalBottles: 0, totalShops: 0, totalCombos: 0 });
 
   const [nickname, setNickname] = useState('Viajero WIRANQA');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
@@ -24,8 +25,6 @@ function App() {
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
-
-  // ✅ REFERENCIA PARA EVITAR ESCANEOS DUPLICADOS
   const isProcessing = useRef(false);
 
   const getDeviceId = () => {
@@ -70,6 +69,7 @@ function App() {
         setNickname(data.nickname);
         if (data.name) setIsRegistered(true);
         if (data.history) setHistory(data.history);
+        if (data.stats) setStats(data.stats);
       }
     } catch (e) { console.error(e); }
   };
@@ -92,7 +92,6 @@ function App() {
   };
 
   const processScan = async (code, id) => {
-    // ✅ EVITAR PROCESAMIENTOS DUPLICADOS
     if (isProcessing.current) return;
     isProcessing.current = true;
 
@@ -114,19 +113,28 @@ function App() {
         setPoints(data.data.points);
         setLevel(data.data.level);
         setMessage(data.message);
-        if (data.data.history) setHistory(data.data.history);
-        setScanning(false); // ✅ Cerramos la cámara al éxito
+        if (data.data.history) {
+          setHistory(data.data.history);
+          // Recalculamos los stats localmente para actualizarlos al instante
+          const newStats = {
+            totalBottles: data.data.history.filter(h => h.displayName === 'Botella WIRANQA').length,
+            totalShops: data.data.history.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
+            totalCombos: data.data.history.filter(h => h.displayName === 'Combo Amigos').length
+          };
+          setStats(newStats);
+        }
+        setScanning(false);
       } else {
         setMessage(data.message);
-        setScanning(false); // ✅ Cerramos la cámara ante cualquier error controlado
+        setScanning(false);
       }
     } catch (error) {
       setLoading(false);
-      setScanning(false); // ✅ FORZAMOS EL CIERRE DE LA CÁMARA ANTE ERRORES 500
+      setScanning(false);
       setMessage('❌ Error de conexión. Reinicia la página e intenta de nuevo.');
     } finally {
       setTimeout(() => setMessage(''), 4000);
-      isProcessing.current = false; // ✅ Liberamos el bloqueo
+      isProcessing.current = false;
     }
   };
 
@@ -317,9 +325,19 @@ function App() {
                 <div className="flex items-center gap-2"><span className="text-3xl">⭐</span><span className="text-3xl font-bold text-slate-800">{points}</span></div>
               </div>
 
+              {/* 🛠️ NUEVO: RESUMEN DE CONSUMOS */}
+              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <label className="block text-sm font-bold text-slate-700 mb-1">📊 Resumen de Consumos</label>
+                <div className="flex justify-between text-sm mt-2">
+                  <span>🍺 Botellas: <strong>{stats.totalBottles}</strong></span>
+                  <span>🥤 Vasos Shop: <strong>{stats.totalShops}</strong></span>
+                  <span>🎉 Combos: <strong>{stats.totalCombos}</strong></span>
+                </div>
+              </div>
+
               <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                 <div className="flex justify-between items-center mb-2">
-                  <label className="block text-sm font-bold text-slate-700">Historial</label>
+                  <label className="block text-sm font-bold text-slate-700">📜 Historial</label>
                   <button onClick={() => setShowHistory(!showHistory)} className="text-sm text-amber-600 hover:text-amber-700 flex items-center gap-1">
                     {showHistory ? '👁️ Ocultar' : '👁️ Ver'}
                   </button>
@@ -329,7 +347,7 @@ function App() {
                     {history.length === 0 ? <p className="text-slate-500 italic text-center py-2">Aún sin registros.</p> : (
                       history.map((item, idx) => (
                         <div key={idx} className="bg-white p-2 rounded border border-slate-100 flex justify-between items-center">
-                          <span className="font-mono text-slate-600">{item.unique_code}</span>
+                          <span className="font-mono text-slate-600">{item.displayName}</span>
                           <span className="text-xs text-slate-400">{new Date(item.redeemed_at).toLocaleString()}</span>
                         </div>
                       ))

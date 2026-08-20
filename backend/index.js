@@ -6,7 +6,6 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- CONFIGURACIÓN DE SEGURIDAD Y CORS ---
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -17,7 +16,6 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '10mb' }));
 
-// --- CONEXIÓN A SUPABASE ---
 const supabaseUrl = 'https://qwjjrwiurhyoszhlsdgd.supabase.co';
 const supabaseKey = 'sb_publishable_mnBY2b4fmjt9NdwmtBBt2A_L-avhMjm';
 const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -36,7 +34,6 @@ const getLevel = (points) => {
   return { id: 1, title: '🍺 Descubre WIRANQA', defaultNickname: 'Viajero WIRANQA' };
 };
 
-// --- RUTA DE SALUD ---
 app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
 
 // --- RUTAS DE USUARIO ---
@@ -63,8 +60,23 @@ app.get('/api/user/:deviceId', async (req, res) => {
       console.warn('⚠️ Error al cargar el historial:', historyError.message);
     }
 
+    // 🛠️ FORMATEAMOS EL HISTORIAL PARA QUE SEA LEGIBLE
+    const formattedHistory = (history || []).map(item => {
+      let displayName = 'Botella WIRANQA';
+      if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
+      if (item.unique_code.includes('Combo')) displayName = 'Combo Amigos';
+      return { ...item, displayName };
+    });
+
     const points = user ? user.points : 0;
     const levelInfo = getLevel(points);
+
+    // 🛠️ CONTADORES PARA EL RESUMEN DEL PERFIL
+    const stats = {
+      totalBottles: formattedHistory.filter(h => h.displayName === 'Botella WIRANQA').length,
+      totalShops: formattedHistory.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
+      totalCombos: formattedHistory.filter(h => h.displayName === 'Combo Amigos').length
+    };
 
     res.json({
       points,
@@ -73,7 +85,8 @@ app.get('/api/user/:deviceId', async (req, res) => {
       name: user ? user.name : null,
       dni: user ? user.dni : null,
       email: user ? user.email : null,
-      history: history || []
+      history: formattedHistory,
+      stats
     });
   } catch (err) {
     console.error('❌ Error en /api/user:', err.message);
@@ -105,104 +118,60 @@ app.post('/api/user/register', async (req, res) => {
   res.json({ success: true });
 });
 
-// --- ESCANEAR QR (CON TRANSACCIONES Y VALIDACIÓN ROBUSTA) ---
+// --- ESCANEAR QR ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
   const code = rawCode ? rawCode.trim() : '';
   const deviceId = rawDeviceId ? rawDeviceId.trim() : '';
 
-  if (!code || !deviceId) {
-    return res.status(400).json({ message: 'Datos incompletos' });
-  }
+  if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
-    // 1. Verificar si la botella existe y no ha sido canjeada
     const { data: bottle, error: bottleError } = await supabase
       .from('bottles')
       .select('*')
       .eq('unique_code', code)
       .single();
 
-    if (bottleError || !bottle) {
-      return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
-    }
+    if (bottleError || !bottle) return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
+    if (bottle.is_redeemed) return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
 
-    if (bottle.is_redeemed) {
-      return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
-    }
-
-    // 2. Marcar la botella como usada y sumar punto en transacción
-    // Primero, actualizamos la botella
-    const { error: updateError } = await supabase
+    await supabase
       .from('bottles')
       .update({ is_redeemed: true, redeemed_by: deviceId, redeemed_at: new Date().toISOString() })
       .eq('id', bottle.id);
 
-    if (updateError) {
-      return res.status(500).json({ message: `Error al marcar la botella: ${updateError.message}` });
-    }
+    await supabase.from('history').insert({ device_id: deviceId, unique_code: code, redeemed_at: new Date().toISOString() });
 
-    // 3. Manejar el usuario y los puntos
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('points')
-      .eq('device_id', deviceId)
-      .maybeSingle();
-
+    const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
     let finalPoints = 1;
-    let defaultNickname = getLevel(1).defaultNickname;
-    let userError = null;
 
     if (existingUser) {
-      // Actualizar usuario existente
       finalPoints = existingUser.points + 1;
-      const { error: updateUserError } = await supabase
-        .from('users')
-        .update({ points: finalPoints })
-        .eq('device_id', deviceId);
-      userError = updateUserError;
+      await supabase.from('users').update({ points: finalPoints }).eq('device_id', deviceId);
     } else {
-      // Crear nuevo usuario
-      defaultNickname = getLevel(1).defaultNickname;
-      const { error: insertUserError } = await supabase
-        .from('users')
-        .insert({ device_id: deviceId, points: 1, nickname: defaultNickname });
-      userError = insertUserError;
+      await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
     }
 
-    if (userError) {
-      // Si falla la suma de puntos, revertimos la botella (en una BD real haríamos un rollback)
-      // En Supabase, intentamos desmarcar la botella para no dejar datos inconsistentes
-      await supabase
-        .from('bottles')
-        .update({ is_redeemed: false, redeemed_by: null, redeemed_at: null })
-        .eq('id', bottle.id);
-      return res.status(500).json({ message: `Error al actualizar puntos: ${userError.message}` });
-    }
-
-    // 4. Insertar en el historial
-    await supabase
-      .from('history')
-      .insert({ device_id: deviceId, unique_code: code, redeemed_at: new Date().toISOString() });
-
-    // 5. Obtener el historial actualizado
-    const { data: history, error: historyError } = await supabase
+    const { data: history } = await supabase
       .from('history')
       .select('unique_code, redeemed_at')
       .eq('device_id', deviceId)
       .order('redeemed_at', { ascending: false });
 
-    if (historyError) {
-      console.warn('⚠️ Error al cargar el historial post-escaneo:', historyError.message);
-    }
-
-    const levelInfo = getLevel(finalPoints);
+    // 🛠️ FORMATEAMOS LA RESPUESTA DEL HISTORIAL NUEVAMENTE
+    const formattedHistory = (history || []).map(item => {
+      let displayName = 'Botella WIRANQA';
+      if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
+      if (item.unique_code.includes('Combo')) displayName = 'Combo Amigos';
+      return { ...item, displayName };
+    });
 
     res.json({
       success: true,
       message: `✅ ¡Has ganado 1 estrella!`,
-      data: { points: finalPoints, level: levelInfo, history: history || [] }
+      data: { points: finalPoints, level: getLevel(finalPoints), history: formattedHistory }
     });
   } catch (err) {
     console.error('❌ Error crítico en /api/scan:', err.message);
@@ -213,7 +182,6 @@ app.post('/api/scan', async (req, res) => {
 // --- CATÁLOGO DE PREMIOS ---
 app.get('/api/rewards', async (req, res) => {
   try {
-    // Insertar premios si no existen (para asegurar que el catálogo esté siempre disponible)
     const { count } = await supabase.from('rewards').select('*', { count: 'exact', head: true });
     if (count === 0) {
       await supabase.from('rewards').insert([
@@ -223,7 +191,6 @@ app.get('/api/rewards', async (req, res) => {
         { name: 'Combo Amigos (5+ personas)', cost: 100, description: '1 ronda gratis de vasos shop' }
       ]);
     }
-
     const { data, error } = await supabase.from('rewards').select('*');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
@@ -238,33 +205,14 @@ app.post('/api/redeem', async (req, res) => {
   if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
 
   try {
-    const { data: reward } = await supabase
-      .from('rewards')
-      .select('cost')
-      .eq('id', rewardId)
-      .single();
-
+    const { data: reward } = await supabase.from('rewards').select('cost').eq('id', rewardId).single();
     if (!reward) return res.status(404).json({ message: 'Premio no disponible' });
-    const cost = reward.cost;
 
-    const { data: user } = await supabase
-      .from('users')
-      .select('points')
-      .eq('device_id', deviceId)
-      .single();
+    const { data: user } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
+    if (!user || user.points < reward.cost) return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
 
-    if (!user || user.points < cost) return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
-
-    await supabase
-      .from('users')
-      .update({ points: user.points - cost })
-      .eq('device_id', deviceId);
-
-    const { data: updatedUser } = await supabase
-      .from('users')
-      .select('points')
-      .eq('device_id', deviceId)
-      .single();
+    await supabase.from('users').update({ points: user.points - reward.cost }).eq('device_id', deviceId);
+    const { data: updatedUser } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
 
     res.json({
       success: true,
