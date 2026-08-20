@@ -25,7 +25,6 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 
 console.log('✅ Conectado a Supabase vía API REST');
 
-// --- 5 NIVELES DE WIRANQERO ---
 const getLevel = (points) => {
   if (points >= 100) return { id: 5, title: '🏆 LEYENDA AYACUCHANA', defaultNickname: 'Leyenda WIRANQA' };
   if (points >= 50) return { id: 4, title: '🍺 MAESTRO WIRANQERO', defaultNickname: 'Maestro Cervecero' };
@@ -56,11 +55,6 @@ app.get('/api/user/:deviceId', async (req, res) => {
       .eq('device_id', deviceId)
       .order('redeemed_at', { ascending: false });
 
-    if (historyError) {
-      console.warn('⚠️ Error al cargar el historial:', historyError.message);
-    }
-
-    // 🛠️ FORMATEAMOS EL HISTORIAL PARA QUE SEA LEGIBLE
     const formattedHistory = (history || []).map(item => {
       let displayName = 'Botella WIRANQA';
       if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
@@ -71,7 +65,6 @@ app.get('/api/user/:deviceId', async (req, res) => {
     const points = user ? user.points : 0;
     const levelInfo = getLevel(points);
 
-    // 🛠️ CONTADORES PARA EL RESUMEN DEL PERFIL
     const stats = {
       totalBottles: formattedHistory.filter(h => h.displayName === 'Botella WIRANQA').length,
       totalShops: formattedHistory.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
@@ -94,26 +87,18 @@ app.get('/api/user/:deviceId', async (req, res) => {
   }
 });
 
-// --- ACTUALIZAR APODO ---
 app.post('/api/user/update', async (req, res) => {
   const { deviceId, nickname } = req.body;
   if (!deviceId || !nickname) return res.status(400).json({ error: 'Datos incompletos' });
-  const { error } = await supabase
-    .from('users')
-    .update({ nickname })
-    .eq('device_id', deviceId);
+  const { error } = await supabase.from('users').update({ nickname }).eq('device_id', deviceId);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
 
-// --- REGISTRAR USUARIO ---
 app.post('/api/user/register', async (req, res) => {
   const { deviceId, name, dni, email } = req.body;
   if (!deviceId || !name || !dni || !email) return res.status(400).json({ error: 'Datos incompletos' });
-  const { error } = await supabase
-    .from('users')
-    .update({ name, dni, email })
-    .eq('device_id', deviceId);
+  const { error } = await supabase.from('users').update({ name, dni, email }).eq('device_id', deviceId);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
@@ -128,25 +113,15 @@ app.post('/api/scan', async (req, res) => {
   if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
-    const { data: bottle, error: bottleError } = await supabase
-      .from('bottles')
-      .select('*')
-      .eq('unique_code', code)
-      .single();
-
-    if (bottleError || !bottle) return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
+    const { data: bottle } = await supabase.from('bottles').select('*').eq('unique_code', code).single();
+    if (!bottle) return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
     if (bottle.is_redeemed) return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
 
-    await supabase
-      .from('bottles')
-      .update({ is_redeemed: true, redeemed_by: deviceId, redeemed_at: new Date().toISOString() })
-      .eq('id', bottle.id);
-
+    await supabase.from('bottles').update({ is_redeemed: true, redeemed_by: deviceId, redeemed_at: new Date().toISOString() }).eq('id', bottle.id);
     await supabase.from('history').insert({ device_id: deviceId, unique_code: code, redeemed_at: new Date().toISOString() });
 
     const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
     let finalPoints = 1;
-
     if (existingUser) {
       finalPoints = existingUser.points + 1;
       await supabase.from('users').update({ points: finalPoints }).eq('device_id', deviceId);
@@ -154,13 +129,8 @@ app.post('/api/scan', async (req, res) => {
       await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
     }
 
-    const { data: history } = await supabase
-      .from('history')
-      .select('unique_code, redeemed_at')
-      .eq('device_id', deviceId)
-      .order('redeemed_at', { ascending: false });
+    const { data: history } = await supabase.from('history').select('unique_code, redeemed_at').eq('device_id', deviceId).order('redeemed_at', { ascending: false });
 
-    // 🛠️ FORMATEAMOS LA RESPUESTA DEL HISTORIAL NUEVAMENTE
     const formattedHistory = (history || []).map(item => {
       let displayName = 'Botella WIRANQA';
       if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
@@ -182,11 +152,12 @@ app.post('/api/scan', async (req, res) => {
 // --- CATÁLOGO DE PREMIOS ---
 app.get('/api/rewards', async (req, res) => {
   try {
+    // ✅ INSERTAMOS LOS PREMIOS SI NO EXISTEN
     const { count } = await supabase.from('rewards').select('*', { count: 'exact', head: true });
     if (count === 0) {
       await supabase.from('rewards').insert([
         { name: 'Cerveza WIRANQA', cost: 6 },
-        { name: 'Vaso Shop WIRANQA', cost: 6 },
+        { name: 'Vaso Shop WIRANQA', cost: 6, description: 'Vaso de vidrio de 350ml' },
         { name: 'Combo Amigos (4 personas)', cost: 40, description: '1 ronda gratis de vasos shop' },
         { name: 'Combo Amigos (5+ personas)', cost: 100, description: '1 ronda gratis de vasos shop' }
       ]);

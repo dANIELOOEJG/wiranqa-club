@@ -115,7 +115,6 @@ function App() {
         setMessage(data.message);
         if (data.data.history) {
           setHistory(data.data.history);
-          // Recalculamos los stats localmente para actualizarlos al instante
           const newStats = {
             totalBottles: data.data.history.filter(h => h.displayName === 'Botella WIRANQA').length,
             totalShops: data.data.history.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
@@ -188,8 +187,6 @@ function App() {
   const handleRedeem = async (rewardId, cost) => {
     if (!isRegistered) {
       setShowRegisterForm(true);
-      setMessage('📝 Primero completa tu registro.');
-      setTimeout(() => setMessage(''), 4000);
       return;
     }
     if (points < cost) {
@@ -325,7 +322,6 @@ function App() {
                 <div className="flex items-center gap-2"><span className="text-3xl">⭐</span><span className="text-3xl font-bold text-slate-800">{points}</span></div>
               </div>
 
-              {/* 🛠️ NUEVO: RESUMEN DE CONSUMOS */}
               <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                 <label className="block text-sm font-bold text-slate-700 mb-1">📊 Resumen de Consumos</label>
                 <div className="flex justify-between text-sm mt-2">
