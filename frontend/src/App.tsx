@@ -9,21 +9,18 @@ function App() {
   const [backendStatus, setBackendStatus] = useState('Desconocido');
   const [scanning, setScanning] = useState(false);
   const [deviceId, setDeviceId] = useState('');
-  const [level, setLevel] = useState({ id: 1, title: '🍺 Descubre WIRANQA', defaultNickname: 'Viajero WIRANQA' });
+  const [level, setLevel] = useState({ id: 1, title: 'Descubre WIRANQA', emoji: '🍺', desc: 'El inicio de tu viaje cervecero.' });
   const [view, setView] = useState('home');
   const [rewards, setRewards] = useState([]);
-  const [stats, setStats] = useState({ totalBottles: 0, totalShops: 0, totalCombos: 0 });
-
+  const [stats, setStats] = useState({ totalBottles: 0, totalShops: 0, totalCombos: 0, totalRedeems: 0 });
   const [nickname, setNickname] = useState('Viajero WIRANQA');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
   const [history, setHistory] = useState([]);
-  
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [userData, setUserData] = useState({ name: '', dni: '', email: '' });
   const [isRegistered, setIsRegistered] = useState(false);
-
-  // 🔒 Estados de privacidad
   const [showStats, setShowStats] = useState(false);
+  const [showLevelLegend, setShowLevelLegend] = useState(false);
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
@@ -54,9 +51,7 @@ function App() {
         fetchUserData(id);
         return true;
       }
-    } catch {
-      setBackendStatus('Offline');
-    }
+    } catch { setBackendStatus('Offline'); }
     return false;
   };
 
@@ -64,7 +59,6 @@ function App() {
     try {
       const res = await fetch(`https://wiranqa-backend.onrender.com/api/user/${id}`);
       const data = await res.json();
-      
       if (data.points !== undefined) {
         setPoints(data.points);
         setLevel(data.level);
@@ -96,21 +90,17 @@ function App() {
   const processScan = async (code, id) => {
     if (isProcessing.current) return;
     isProcessing.current = true;
-
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
     const cleanCode = code.trim();
-
     try {
       const res = await fetch('https://wiranqa-backend.onrender.com/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: cleanCode, deviceId: id })
       });
-      
       const data = await res.json();
       setLoading(false);
-      
       if (data.success) {
         setPoints(data.data.points);
         setLevel(data.data.level);
@@ -120,7 +110,8 @@ function App() {
           const newStats = {
             totalBottles: data.data.history.filter(h => h.displayName === 'Botella WIRANQA').length,
             totalShops: data.data.history.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
-            totalCombos: data.data.history.filter(h => h.displayName === 'Combo Amigos').length
+            totalCombos: data.data.history.filter(h => h.displayName === 'Combo Amigos').length,
+            totalRedeems: data.data.history.filter(h => h.displayName.includes('Canje')).length
           };
           setStats(newStats);
         }
@@ -132,7 +123,7 @@ function App() {
     } catch (error) {
       setLoading(false);
       setScanning(false);
-      setMessage('❌ Error de conexión. Reinicia la página e intenta de nuevo.');
+      setMessage('❌ Error de conexión.');
     } finally {
       setTimeout(() => setMessage(''), 4000);
       isProcessing.current = false;
@@ -308,6 +299,7 @@ function App() {
                 ) : (
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-bold text-slate-800">{nickname}</span>
+                    <span className="text-sm text-slate-500 ml-2">- Nivel {level.id}</span>
                     <button onClick={() => setIsEditingNickname(true)} className="text-sm text-amber-600 hover:text-amber-700 underline">Editar</button>
                   </div>
                 )}
@@ -315,8 +307,9 @@ function App() {
 
               <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                 <label className="block text-sm font-bold text-slate-700 mb-1">Nivel</label>
-                <div className="flex items-center gap-2"><span className="text-2xl">{level.title.split(' ')[0]}</span><span className="text-lg font-bold text-slate-800">{level.title}</span></div>
+                <div className="flex items-center gap-2"><span className="text-2xl">{level.emoji}</span><span className="text-lg font-bold text-slate-800">{level.title}</span></div>
                 <p className="text-xs text-slate-500 mt-1">Nivel {level.id} de 5</p>
+                <p className="text-xs text-amber-600 mt-1">{level.desc}</p>
               </div>
 
               <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -324,7 +317,6 @@ function App() {
                 <div className="flex items-center gap-2"><span className="text-3xl">⭐</span><span className="text-3xl font-bold text-slate-800">{points}</span></div>
               </div>
 
-              {/* 🔒 RESUMEN DE CONSUMOS CON PRIVACIDAD */}
               <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-sm font-bold text-slate-700">📊 Resumen de Consumos</label>
@@ -337,6 +329,22 @@ function App() {
                     <span>🍺 Botellas: <strong>{stats.totalBottles}</strong></span>
                     <span>🥤 Vasos Shop: <strong>{stats.totalShops}</strong></span>
                     <span>🎉 Combos: <strong>{stats.totalCombos}</strong></span>
+                    <span>🎁 Canjes: <strong>{stats.totalRedeems}</strong></span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <button onClick={() => setShowLevelLegend(!showLevelLegend)} className="w-full py-2 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 text-sm font-bold">
+                  {showLevelLegend ? 'Ocultar Leyenda de Niveles' : '📜 Ver Leyenda de Niveles'}
+                </button>
+                {showLevelLegend && (
+                  <div className="mt-3 space-y-2 text-xs border-t border-slate-200 pt-3">
+                    <div className="flex items-center gap-2"><span>🏆</span><span><strong>LEYENDA AYACUCHANA</strong> (100+) - Eres parte de la historia.</span></div>
+                    <div className="flex items-center gap-2"><span>🍺</span><span><strong>MAESTRO WIRANQERO</strong> (50+) - Un conocedor del lúpulo.</span></div>
+                    <div className="flex items-center gap-2"><span>⭐</span><span><strong>WIRANQERO EXPERTO</strong> (25+) - Ya sabes lo que es buena cerveza.</span></div>
+                    <div className="flex items-center gap-2"><span>🌱</span><span><strong>WIRANQERO NOVATO</strong> (10+) - Estás empezando tu viaje.</span></div>
+                    <div className="flex items-center gap-2"><span>🍺</span><span><strong>Descubre WIRANQA</strong> (0+) - El inicio de tu viaje cervecero.</span></div>
                   </div>
                 )}
               </div>
