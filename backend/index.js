@@ -8,19 +8,13 @@ const PORT = process.env.PORT || 3000;
 
 // --- CONFIGURACIÓN DE SEGURIDAD Y CORS ---
 app.use(helmet({ crossOriginResourcePolicy: false }));
-
-// Middleware CORS manual (Permite cualquier origen)
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
-
-// Middleware para parsear JSON
 app.use(express.json({ limit: '10mb' }));
 
 // --- CONEXIÓN A SUPABASE ---
@@ -33,86 +27,105 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 
 console.log('✅ Conectado a Supabase vía API REST');
 
-// --- FUNCIÓN AUXILIAR PARA CALCULAR NIVELES ---
+// --- 5 NIVELES DE WIRANQERO ---
 const getLevel = (points) => {
-  if (points >= 100) return { title: 'LEYENDA AYACUCHANA', emoji: '🏆', notification: '🎉 ¡Has alcanzado el nivel máximo! Eres una leyenda.' };
-  if (points >= 50) return { title: 'MAESTRO WIRANQERO', emoji: '🍺', notification: '🔥 ¡Eres un Maestro WIRANQERO! Sigue así.' };
-  if (points >= 25) return { title: 'WIRANQERO EXPERTO', emoji: '⭐', notification: '🌟 ¡Has llegado a Experto! Cada vez más cerca de la leyenda.' };
-  if (points >= 10) return { title: 'WIRANQERO NOVATO', emoji: '🌱', notification: '🌱 ¡Bienvenido al club! Sigue escaneando para subir de nivel.' };
-  return { title: 'Descubre WIRANQA', emoji: '🍺', notification: '🍺 Escanea tu primera botella y comienza tu viaje.' };
+  if (points >= 100) return { id: 5, title: '🏆 LEYENDA AYACUCHANA', defaultNickname: 'Leyenda WIRANQA' };
+  if (points >= 50) return { id: 4, title: '🍺 MAESTRO WIRANQERO', defaultNickname: 'Maestro Cervecero' };
+  if (points >= 25) return { id: 3, title: '⭐ WIRANQERO EXPERTO', defaultNickname: 'Experto en Lúpulo' };
+  if (points >= 10) return { id: 2, title: '🌱 WIRANQERO NOVATO', defaultNickname: 'Nuevo Catador' };
+  return { id: 1, title: '🍺 Descubre WIRANQA', defaultNickname: 'Viajero WIRANQA' };
 };
 
 // --- RUTA DE SALUD ---
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'WIRANQA Backend running' });
-});
+app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
 
-// --- RUTAS DE USUARIO Y ESCANEO ---
-
-// Obtener puntos y nivel de un usuario
+// --- OBTENER DATOS DEL USUARIO ---
 app.get('/api/user/:deviceId', async (req, res) => {
   const { deviceId } = req.params;
   try {
-    const { data, error } = await supabase
+    const { data: user, error } = await supabase
       .from('users')
-      .select('points')
+      .select('points, nickname, name, dni, email')
       .eq('device_id', deviceId)
       .single();
 
-    if (error && error.code !== 'PGRST116') {
-      return res.status(500).json({ error: error.message });
-    }
-    
-    const points = data ? data.points : 0;
+    if (error && error.code !== 'PGRST116') return res.status(500).json({ error: error.message });
+
+    const history = await supabase
+      .from('history')
+      .select('unique_code, redeemed_at')
+      .eq('device_id', deviceId)
+      .order('redeemed_at', { ascending: false });
+
+    const points = user ? user.points : 0;
     const levelInfo = getLevel(points);
-    
-    res.json({ points, level: levelInfo });
+
+    res.json({
+      points,
+      nickname: user ? user.nickname : levelInfo.defaultNickname,
+      level: levelInfo,
+      name: user ? user.name : null,
+      dni: user ? user.dni : null,
+      email: user ? user.email : null,
+      history: history.data || []
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Escanear QR (Lógica CORREGIDA y robusta)
+// --- ACTUALIZAR APODO ---
+app.post('/api/user/update', async (req, res) => {
+  const { deviceId, nickname } = req.body;
+  if (!deviceId || !nickname) return res.status(400).json({ error: 'Datos incompletos' });
+  const { error } = await supabase
+    .from('users')
+    .update({ nickname })
+    .eq('device_id', deviceId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+// --- REGISTRAR USUARIO ---
+app.post('/api/user/register', async (req, res) => {
+  const { deviceId, name, dni, email } = req.body;
+  if (!deviceId || !name || !dni || !email) return res.status(400).json({ error: 'Datos incompletos' });
+  const { error } = await supabase
+    .from('users')
+    .update({ name, dni, email })
+    .eq('device_id', deviceId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+// --- ESCANEAR QR ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
-  
-  // 🛠️ CORRECCIÓN: Limpiamos el ID del dispositivo de espacios en blanco y saltos de línea
   const code = rawCode ? rawCode.trim() : '';
   const deviceId = rawDeviceId ? rawDeviceId.trim() : '';
 
-  if (!code || !deviceId) {
-    return res.status(400).json({ message: 'Datos incompletos' });
-  }
+  if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
-    // 1. Verificar si la botella existe y no ha sido canjeada
-    const { data: bottle, error: bottleError } = await supabase
+    const { data: bottle } = await supabase
       .from('bottles')
       .select('*')
       .eq('unique_code', code)
       .single();
 
-    if (bottleError || !bottle) {
-      return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
-    }
+    if (!bottle) return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
+    if (bottle.is_redeemed) return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
 
-    if (bottle.is_redeemed) {
-      return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
-    }
-
-    // 2. Marcar la botella como usada
-    const { error: updateError } = await supabase
+    await supabase
       .from('bottles')
       .update({ is_redeemed: true, redeemed_by: deviceId, redeemed_at: new Date().toISOString() })
       .eq('id', bottle.id);
 
-    if (updateError) {
-      return res.status(500).json({ error: updateError.message });
-    }
+    await supabase
+      .from('history')
+      .insert({ device_id: deviceId, unique_code: code, redeemed_at: new Date().toISOString() });
 
-    // 3. Sumar puntos al usuario (Lógica CORREGIDA y robusta)
-    // Primero verificamos si el usuario ya existe
     const { data: existingUser } = await supabase
       .from('users')
       .select('points')
@@ -120,62 +133,52 @@ app.post('/api/scan', async (req, res) => {
       .maybeSingle();
 
     let finalPoints = 1;
-    let levelInfo = getLevel(1);
+    let defaultNickname = getLevel(1).defaultNickname;
 
     if (existingUser) {
-      // Si existe, sumamos 1
       finalPoints = existingUser.points + 1;
-      const { data: updatedUser, error: updateError } = await supabase
+      await supabase
         .from('users')
         .update({ points: finalPoints })
-        .eq('device_id', deviceId)
-        .select('points')
-        .single();
-
-      if (updateError) {
-        return res.status(500).json({ error: updateError.message });
-      }
-      levelInfo = getLevel(finalPoints);
-      return res.json({ 
-        success: true, 
-        message: `✅ ¡Has ganado 1 estrella!`, 
-        data: { points: finalPoints, level: levelInfo } 
-      });
+        .eq('device_id', deviceId);
     } else {
-      // Si no existe, lo creamos con 1 punto
-      const { data: newUser, error: createError } = await supabase
+      await supabase
         .from('users')
-        .insert({ device_id: deviceId, points: 1 })
-        .select('points')
-        .single();
-
-      if (createError) {
-        return res.status(500).json({ error: createError.message });
-      }
-      finalPoints = 1;
-      levelInfo = getLevel(1);
-      return res.json({ 
-        success: true, 
-        message: `✅ ¡Has ganado 1 estrella!`, 
-        data: { points: 1, level: levelInfo } 
-      });
+        .insert({ device_id: deviceId, points: 1, nickname: defaultNickname });
     }
 
+    const history = await supabase
+      .from('history')
+      .select('unique_code, redeemed_at')
+      .eq('device_id', deviceId)
+      .order('redeemed_at', { ascending: false });
+
+    const levelInfo = getLevel(finalPoints);
+
+    res.json({
+      success: true,
+      message: `✅ ¡Has ganado 1 estrella!`,
+      data: { points: finalPoints, level: levelInfo, history: history.data || [] }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
-// --- RUTAS DE CATÁLOGO Y CANJE DE PREMIOS ---
-
-// Obtener lista de premios activos
+// --- CATÁLOGO DE PREMIOS ---
 app.get('/api/rewards', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('rewards')
-      .select('*')
-      .eq('is_active', true);
+    // Insertar premios si no existen
+    await supabase.from('rewards').delete().neq('id', 0);
+    await supabase.from('rewards').insert([
+      { name: 'Cerveza WIRANQA', cost: 6 },
+      { name: 'Vaso Shop WIRANQA', cost: 6 },
+      { name: 'Combo Amigos (4 personas)', cost: 40, description: '1 ronda gratis de vasos shop' },
+      { name: 'Combo Amigos (5+ personas)', cost: 100, description: '1 ronda gratis de vasos shop' }
+    ]);
+
+    const { data, error } = await supabase.from('rewards').select('*');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (err) {
@@ -183,54 +186,45 @@ app.get('/api/rewards', async (req, res) => {
   }
 });
 
-// Canjear un premio
+// --- CANJEAR PREMIO ---
 app.post('/api/redeem', async (req, res) => {
   const { deviceId, rewardId } = req.body;
   if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
 
   try {
-    // 1. Obtener el costo del premio
-    const { data: reward, error: rewardError } = await supabase
+    const { data: reward } = await supabase
       .from('rewards')
       .select('cost')
       .eq('id', rewardId)
-      .eq('is_active', true)
       .single();
 
-    if (rewardError || !reward) {
-      return res.status(404).json({ message: 'Premio no disponible' });
-    }
+    if (!reward) return res.status(404).json({ message: 'Premio no disponible' });
     const cost = reward.cost;
 
-    // 2. Verificar saldo del usuario
-    const { data: user, error: userError } = await supabase
+    const { data: user } = await supabase
       .from('users')
       .select('points')
       .eq('device_id', deviceId)
       .single();
 
-    if (userError || !user || user.points < cost) {
-      return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
-    }
+    if (!user || user.points < cost) return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
 
-    // 3. Descontar puntos
-    const { data: updatedUser, error: updateError } = await supabase
+    await supabase
       .from('users')
       .update({ points: user.points - cost })
-      .eq('device_id', deviceId)
-      .select('points')
-      .single();
+      .eq('device_id', deviceId);
 
-    if (updateError) {
-      return res.status(500).json({ error: updateError.message });
-    }
+    const { data: updatedUser } = await supabase
+      .from('users')
+      .select('points')
+      .eq('device_id', deviceId)
+      .single();
 
     res.json({
       success: true,
       message: `🎉 ¡Has canjeado tu premio! Te quedan ${updatedUser.points} estrellas.`,
       data: updatedUser
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error interno del servidor' });
