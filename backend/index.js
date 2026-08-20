@@ -1,5 +1,4 @@
 const express = require('express');
-const cors = require('cors');
 const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
@@ -7,21 +6,41 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- CONFIGURACIÓN DE SEGURIDAD Y CORS (SOLUCIÓN DEFINITIVA) ---
 app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use(cors());
-app.use(express.json());
 
-// Conexión a Supabase vía API REST (Con la llave correcta y headers explícitos)
+// Middleware CORS manual (Permite cualquier origen y soluciona el error 400)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Middleware para parsear JSON (Aumentamos el límite para evitar errores de carga)
+app.use(express.json({ limit: '10mb' }));
+
+// --- CONEXIÓN A SUPABASE ---
 const supabaseUrl = 'https://qwjjrwiurhyoszhlsdgd.supabase.co';
 const supabaseKey = 'sb_publishable_mnBY2b4fmjt9NdwmtBBt2A_L-avhMjm';
-
-// Creamos el cliente con los headers necesarios para autenticación
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { persistSession: false },
   headers: { 'apikey': supabaseKey }
 });
 
 console.log('✅ Conectado a Supabase vía API REST');
+
+// --- FUNCIÓN AUXILIAR PARA CALCULAR NIVELES ---
+const getLevel = (points) => {
+  if (points >= 100) return { title: 'LEYENDA AYACUCHANA', emoji: '🏆', notification: '🎉 ¡Has alcanzado el nivel máximo! Eres una leyenda.' };
+  if (points >= 50) return { title: 'MAESTRO WIRANQERO', emoji: '🍺', notification: '🔥 ¡Eres un Maestro WIRANQERO! Sigue así.' };
+  if (points >= 25) return { title: 'WIRANQERO EXPERTO', emoji: '⭐', notification: '🌟 ¡Has llegado a Experto! Cada vez más cerca de la leyenda.' };
+  if (points >= 10) return { title: 'WIRANQERO NOVATO', emoji: '🌱', notification: '🌱 ¡Bienvenido al club! Sigue escaneando para subir de nivel.' };
+  return { title: 'Descubre WIRANQA', emoji: '🍺', notification: '🍺 Escanea tu primera botella y comienza tu viaje.' };
+};
 
 // --- RUTA DE SALUD ---
 app.get('/health', (req, res) => {
@@ -30,7 +49,7 @@ app.get('/health', (req, res) => {
 
 // --- RUTAS DE USUARIO Y ESCANEO ---
 
-// Obtener puntos de un usuario
+// Obtener puntos y nivel de un usuario
 app.get('/api/user/:deviceId', async (req, res) => {
   const { deviceId } = req.params;
   try {
@@ -43,7 +62,11 @@ app.get('/api/user/:deviceId', async (req, res) => {
     if (error && error.code !== 'PGRST116') {
       return res.status(500).json({ error: error.message });
     }
-    res.json({ points: data ? data.points : 0 });
+    
+    const points = data ? data.points : 0;
+    const levelInfo = getLevel(points);
+    
+    res.json({ points, level: levelInfo });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -51,12 +74,13 @@ app.get('/api/user/:deviceId', async (req, res) => {
 
 // Escanear QR
 app.post('/api/scan', async (req, res) => {
-  // 🛠️ CORRECCIÓN FINAL: Limpia cualquier espacio en blanco o salto de línea del QR escaneado
   const rawCode = req.body.code;
   const deviceId = req.body.deviceId;
   const code = rawCode ? rawCode.trim() : '';
 
-  if (!code || !deviceId) return res.status(400).json({ error: 'Datos incompletos' });
+  if (!code || !deviceId) {
+    return res.status(400).json({ message: 'Datos incompletos' });
+  }
 
   try {
     // 1. Verificar si la botella existe y no ha sido canjeada
@@ -91,6 +115,9 @@ app.post('/api/scan', async (req, res) => {
       .select('points')
       .single();
 
+    let finalPoints = 1;
+    let levelInfo = getLevel(1);
+
     if (userError) {
       // Si falla el upsert, intentamos sumar 1 al existente
       const { data: existingUser } = await supabase
@@ -100,18 +127,31 @@ app.post('/api/scan', async (req, res) => {
         .single();
 
       if (existingUser) {
+        finalPoints = existingUser.points + 1;
         const { data: updatedUser } = await supabase
           .from('users')
-          .update({ points: existingUser.points + 1 })
+          .update({ points: finalPoints })
           .eq('device_id', deviceId)
           .select('points')
           .single();
-        return res.json({ success: true, message: '✅ ¡Has ganado 1 estrella!', data: updatedUser });
+        levelInfo = getLevel(finalPoints);
+        return res.json({ 
+          success: true, 
+          message: `✅ ¡Has ganado 1 estrella!`, 
+          data: { points: finalPoints, level: levelInfo } 
+        });
       }
       return res.status(500).json({ error: userError.message });
     }
 
-    res.json({ success: true, message: '✅ ¡Has ganado 1 estrella!', data: userData });
+    finalPoints = userData.points;
+    levelInfo = getLevel(finalPoints);
+
+    res.json({ 
+      success: true, 
+      message: `✅ ¡Has ganado 1 estrella!`, 
+      data: { points: finalPoints, level: levelInfo } 
+    });
 
   } catch (err) {
     console.error(err);
