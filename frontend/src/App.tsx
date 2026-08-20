@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 // @ts-ignore
 import QrReader from 'react-qr-scanner';
 
@@ -13,19 +13,20 @@ function App() {
   const [view, setView] = useState('home');
   const [rewards, setRewards] = useState([]);
 
-  // Estados del perfil
   const [nickname, setNickname] = useState('Viajero WIRANQA');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState([]);
   
-  // Estados del registro
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [userData, setUserData] = useState({ name: '', dni: '', email: '' });
   const [isRegistered, setIsRegistered] = useState(false);
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
+
+  // ✅ REFERENCIA PARA EVITAR ESCANEOS DUPLICADOS
+  const isProcessing = useRef(false);
 
   const getDeviceId = () => {
     let id = localStorage.getItem('wiranqa_device_id');
@@ -91,6 +92,10 @@ function App() {
   };
 
   const processScan = async (code, id) => {
+    // ✅ EVITAR PROCESAMIENTOS DUPLICADOS
+    if (isProcessing.current) return;
+    isProcessing.current = true;
+
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
     const cleanCode = code.trim();
@@ -110,23 +115,23 @@ function App() {
         setLevel(data.data.level);
         setMessage(data.message);
         if (data.data.history) setHistory(data.data.history);
+        setScanning(false); // ✅ Cerramos la cámara al éxito
       } else {
         setMessage(data.message);
-        if (data.message.includes('ya fue disfrutada')) setScanning(false);
-        else setScanning(true);
+        setScanning(false); // ✅ Cerramos la cámara ante cualquier error controlado
       }
     } catch (error) {
       setLoading(false);
-      setScanning(false);
-      setMessage('❌ Error de conexión. Verifica tu internet.');
+      setScanning(false); // ✅ FORZAMOS EL CIERRE DE LA CÁMARA ANTE ERRORES 500
+      setMessage('❌ Error de conexión. Reinicia la página e intenta de nuevo.');
     } finally {
       setTimeout(() => setMessage(''), 4000);
+      isProcessing.current = false; // ✅ Liberamos el bloqueo
     }
   };
 
   const handleScan = (data) => {
-    if (data && data.text && deviceId) {
-      setScanning(false);
+    if (data && data.text && deviceId && !isProcessing.current) {
       processScan(data.text, deviceId);
     }
   };
@@ -211,7 +216,6 @@ function App() {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 border border-amber-200 relative overflow-hidden">
         <div className="relative z-10 text-center">
           <div className="flex flex-col items-center mb-4">
-            {/* ✅ LOGO SIN SOMBRA Y CON MÁRGEN AJUSTADO PARA ENCAJAR PERFECTAMENTE */}
             <img src="/logo.png" alt="WIRANQA" className="h-20 object-contain mb-2" />
             <h1 className="text-2xl font-bold text-amber-700 tracking-wider">WIRANQA CLUB</h1>
             <p className="text-xs text-slate-500 font-medium tracking-widest">Cerveza Artesanal Ayacuchana</p>
