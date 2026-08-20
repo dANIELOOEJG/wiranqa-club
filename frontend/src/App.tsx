@@ -60,6 +60,7 @@ function App() {
       const res = await fetch(`https://wiranqa-backend.onrender.com/api/user/${id}`);
       const data = await res.json();
       if (data.points !== undefined) {
+        // ✅ Forzamos la actualización visual de los puntos
         setPoints(data.points);
         setLevel(getLevelFromPoints(data.points));
       }
@@ -83,7 +84,6 @@ function App() {
     }
   };
 
-  // --- FUNCIÓN DE ESCANEO FINAL (Con flujo mejorado) ---
   const processScan = async (code, id) => {
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
@@ -100,16 +100,15 @@ function App() {
       setLoading(false);
       
       if (data.success) {
+        // ✅ Actualizamos los puntos con el valor exacto que devuelve el servidor
         setPoints(data.data.points);
         setLevel(getLevelFromPoints(data.data.points));
         setMessage(data.message);
       } else {
         setMessage(data.message);
-        // Si el mensaje indica que ya fue usado o no pertenece al lote, NO cerramos la cámara
         if (data.message.includes('ya fue disfrutada') || data.message.includes('ya fue canjeada')) {
-          setScanning(false); // Solo cerramos la cámara momentáneamente
+          setScanning(false);
         } else {
-          // Si es otro error, dejamos la cámara abierta
           setScanning(true);
         }
       }
