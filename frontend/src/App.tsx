@@ -211,7 +211,8 @@ function App() {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 border border-amber-200 relative overflow-hidden">
         <div className="relative z-10 text-center">
           <div className="flex flex-col items-center mb-4">
-            <img src="/logo.png" alt="WIRANQA" className="h-20 object-contain mb-2 drop-shadow-md" />
+            {/* ✅ LOGO SIN SOMBRA Y CON MÁRGEN AJUSTADO PARA ENCAJAR PERFECTAMENTE */}
+            <img src="/logo.png" alt="WIRANQA" className="h-20 object-contain mb-2" />
             <h1 className="text-2xl font-bold text-amber-700 tracking-wider">WIRANQA CLUB</h1>
             <p className="text-xs text-slate-500 font-medium tracking-widest">Cerveza Artesanal Ayacuchana</p>
           </div>
