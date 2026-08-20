@@ -83,7 +83,7 @@ function App() {
     }
   };
 
-  // --- FUNCIÓN DE ESCANEO CORREGIDA ---
+  // --- FUNCIÓN DE ESCANEO FINAL (Con flujo mejorado) ---
   const processScan = async (code, id) => {
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
@@ -100,21 +100,23 @@ function App() {
       setLoading(false);
       
       if (data.success) {
-        // Actualizamos los puntos con el nuevo valor que devuelve el servidor
         setPoints(data.data.points);
         setLevel(getLevelFromPoints(data.data.points));
         setMessage(data.message);
       } else {
         setMessage(data.message);
-        // Si el mensaje indica que ya fue usado, cerramos la cámara
+        // Si el mensaje indica que ya fue usado o no pertenece al lote, NO cerramos la cámara
         if (data.message.includes('ya fue disfrutada') || data.message.includes('ya fue canjeada')) {
-          setScanning(false);
+          setScanning(false); // Solo cerramos la cámara momentáneamente
+        } else {
+          // Si es otro error, dejamos la cámara abierta
+          setScanning(true);
         }
       }
     } catch (error) {
       setLoading(false);
       setScanning(false);
-      setMessage('❌ Error de conexión. Verifica tu internet o intenta de nuevo.');
+      setMessage('❌ Error de conexión. Verifica tu internet.');
     } finally {
       setTimeout(() => setMessage(''), 4000);
     }
@@ -167,7 +169,6 @@ function App() {
             <p className="text-xs text-slate-500 font-medium tracking-widest">Cerveza Artesanal Ayacuchana</p>
           </div>
 
-          {/* Indicador de conexión (Versión instantánea y fluida) */}
           <div className={`mb-4 p-3 rounded-xl transition-all duration-500 ease-in-out ${
             backendStatus === 'Online' 
               ? 'bg-emerald-50 border border-emerald-300 shadow-sm' 
