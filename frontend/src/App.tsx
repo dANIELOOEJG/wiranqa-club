@@ -83,51 +83,39 @@ function App() {
     }
   };
 
-  // --- FUNCIÓN DE ESCANEO MEJORADA CON TIMEOUT Y CIERRE AUTOMÁTICO ---
+  // --- FUNCIÓN DE ESCANEO CORREGIDA (SIN TIMEOUT QUE BLOQUEA) ---
   const processScan = async (code, id) => {
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
     const cleanCode = code.trim();
 
-    // Creamos un controlador para poder cancelar la petición si tarda más de 10 segundos
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
     try {
       const res = await fetch('https://wiranqa-backend.onrender.com/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: cleanCode, deviceId: id }),
-        signal: controller.signal
+        body: JSON.stringify({ code: cleanCode, deviceId: id })
       });
       
-      clearTimeout(timeoutId); // Limpiamos el timeout si el servidor respondió a tiempo
-
       const data = await res.json();
       setLoading(false);
       
       if (data.success) {
+        // Actualizamos los puntos con el nuevo valor que devuelve el servidor
         setPoints(data.data.points);
         setLevel(getLevelFromPoints(data.data.points));
         setMessage(data.message);
       } else {
         setMessage(data.message);
-        // Si el mensaje indica que ya fue usado, cerramos la cámara automáticamente
+        // Si el mensaje indica que ya fue usado, cerramos la cámara
         if (data.message.includes('ya fue disfrutada') || data.message.includes('ya fue canjeada')) {
           setScanning(false);
         }
       }
     } catch (error) {
       setLoading(false);
-      setScanning(false); // Cerramos la cámara si hubo cualquier error
-      
-      if (error.name === 'AbortError') {
-        setMessage('❌ El servidor tardó demasiado en responder. Por favor, intenta de nuevo.');
-      } else {
-        setMessage('❌ Error de conexión. Verifica tu internet o intenta de nuevo.');
-      }
+      setScanning(false);
+      setMessage('❌ Error de conexión. Verifica tu internet o intenta de nuevo.');
     } finally {
-      // Cerramos cualquier mensaje de carga después de 4 segundos
       setTimeout(() => setMessage(''), 4000);
     }
   };
