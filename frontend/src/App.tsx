@@ -83,7 +83,7 @@ function App() {
     }
   };
 
-  // --- FUNCIÓN DE ESCANEO CORREGIDA (SIN TIMEOUT QUE BLOQUEA) ---
+  // --- FUNCIÓN DE ESCANEO CORREGIDA ---
   const processScan = async (code, id) => {
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
@@ -167,15 +167,22 @@ function App() {
             <p className="text-xs text-slate-500 font-medium tracking-widest">Cerveza Artesanal Ayacuchana</p>
           </div>
 
-          {backendStatus === 'Online' ? (
-            <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-300">
-              <h2 className="text-lg font-bold text-emerald-700">🍺 ¡Bienvenido, WIRANQERO!</h2>
-            </div>
-          ) : (
-            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-300">
-              <h2 className="text-lg font-bold text-red-700">⏳ Conectando...</h2>
-            </div>
-          )}
+          {/* Indicador de conexión (Versión instantánea y fluida) */}
+          <div className={`mb-4 p-3 rounded-xl transition-all duration-500 ease-in-out ${
+            backendStatus === 'Online' 
+              ? 'bg-emerald-50 border border-emerald-300 shadow-sm' 
+              : 'bg-slate-50 border border-slate-200'
+          }`}>
+            <h2 className={`text-lg font-bold transition-colors duration-300 ${
+              backendStatus === 'Online' 
+                ? 'text-emerald-700' 
+                : 'text-slate-500'
+            }`}>
+              {backendStatus === 'Online' 
+                ? '🍺 ¡Bienvenido, WIRANQERO!' 
+                : '⏳ Conectando con el servidor...'}
+            </h2>
+          </div>
 
           <div className="flex justify-center gap-4 mb-4">
             <button 
