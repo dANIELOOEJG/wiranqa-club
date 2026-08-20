@@ -16,12 +16,14 @@ function App() {
 
   const [nickname, setNickname] = useState('Viajero WIRANQA');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState([]);
   
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [userData, setUserData] = useState({ name: '', dni: '', email: '' });
   const [isRegistered, setIsRegistered] = useState(false);
+
+  // 🔒 Estados de privacidad
+  const [showStats, setShowStats] = useState(false);
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
@@ -322,32 +324,19 @@ function App() {
                 <div className="flex items-center gap-2"><span className="text-3xl">⭐</span><span className="text-3xl font-bold text-slate-800">{points}</span></div>
               </div>
 
-              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <label className="block text-sm font-bold text-slate-700 mb-1">📊 Resumen de Consumos</label>
-                <div className="flex justify-between text-sm mt-2">
-                  <span>🍺 Botellas: <strong>{stats.totalBottles}</strong></span>
-                  <span>🥤 Vasos Shop: <strong>{stats.totalShops}</strong></span>
-                  <span>🎉 Combos: <strong>{stats.totalCombos}</strong></span>
-                </div>
-              </div>
-
+              {/* 🔒 RESUMEN DE CONSUMOS CON PRIVACIDAD */}
               <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                 <div className="flex justify-between items-center mb-2">
-                  <label className="block text-sm font-bold text-slate-700">📜 Historial</label>
-                  <button onClick={() => setShowHistory(!showHistory)} className="text-sm text-amber-600 hover:text-amber-700 flex items-center gap-1">
-                    {showHistory ? '👁️ Ocultar' : '👁️ Ver'}
+                  <label className="block text-sm font-bold text-slate-700">📊 Resumen de Consumos</label>
+                  <button onClick={() => setShowStats(!showStats)} className="text-sm text-amber-600 hover:text-amber-700 flex items-center gap-1">
+                    {showStats ? '👁️ Ocultar' : '👁️ Ver'}
                   </button>
                 </div>
-                {showHistory && (
-                  <div className="space-y-2 max-h-40 overflow-y-auto text-sm">
-                    {history.length === 0 ? <p className="text-slate-500 italic text-center py-2">Aún sin registros.</p> : (
-                      history.map((item, idx) => (
-                        <div key={idx} className="bg-white p-2 rounded border border-slate-100 flex justify-between items-center">
-                          <span className="font-mono text-slate-600">{item.displayName}</span>
-                          <span className="text-xs text-slate-400">{new Date(item.redeemed_at).toLocaleString()}</span>
-                        </div>
-                      ))
-                    )}
+                {showStats && (
+                  <div className="flex justify-between text-sm mt-2">
+                    <span>🍺 Botellas: <strong>{stats.totalBottles}</strong></span>
+                    <span>🥤 Vasos Shop: <strong>{stats.totalShops}</strong></span>
+                    <span>🎉 Combos: <strong>{stats.totalCombos}</strong></span>
                   </div>
                 )}
               </div>
