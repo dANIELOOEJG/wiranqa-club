@@ -12,16 +12,14 @@ function App() {
   const [level, setLevel] = useState({ id: 1, title: 'Descubre WIRANQA', emoji: '🍺', desc: 'El inicio de tu viaje cervecero.' });
   const [view, setView] = useState('home');
   const [rewards, setRewards] = useState([]);
-  const [stats, setStats] = useState({ totalBottles: 0, totalShops: 0, totalCombos: 0, totalRedeems: 0 });
+  const [history, setHistory] = useState([]);
+  const [restaurants, setRestaurants] = useState([]);
+  const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [nickname, setNickname] = useState('Viajero WIRANQA');
   const [isEditingNickname, setIsEditingNickname] = useState(false);
-  const [history, setHistory] = useState([]);
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [userData, setUserData] = useState({ name: '', dni: '', email: '' });
   const [isRegistered, setIsRegistered] = useState(false);
-  const [showStats, setShowStats] = useState(false);
-  const [showLevelLegend, setShowLevelLegend] = useState(false);
-  const [selectedRestaurant, setSelectedRestaurant] = useState(null); // Para canjear en un restaurante específico
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
@@ -36,19 +34,13 @@ function App() {
     return id;
   };
 
-  // 🚀 KEEP ALIVE: Para que el backend nunca se duerma (Carga Instantánea)
+  // 🚀 KEEP ALIVE (Carga rápida)
   useEffect(() => {
     const keepAlive = async () => {
-      try {
-        await fetch('https://wiranqa-backend.onrender.com/health');
-      } catch (e) {
-        // Ignorar errores momentáneos
-      }
+      try { await fetch('https://wiranqa-backend.onrender.com/health'); } catch (e) {}
     };
-    
-    keepAlive(); // Llamamos al inicio
-    const interval = setInterval(keepAlive, 60000); // Cada 60 segundos
-    
+    keepAlive();
+    const interval = setInterval(keepAlive, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -57,6 +49,7 @@ function App() {
     setDeviceId(id);
     checkBackend(id);
     fetchRewards();
+    fetchRestaurants();
     handleAutoScanFromURL(id);
   }, []);
 
@@ -82,7 +75,6 @@ function App() {
         setNickname(data.nickname);
         if (data.name) setIsRegistered(true);
         if (data.history) setHistory(data.history);
-        if (data.stats) setStats(data.stats);
       }
     } catch (e) { console.error(e); }
   };
@@ -92,6 +84,14 @@ function App() {
       const res = await fetch('https://wiranqa-backend.onrender.com/api/rewards');
       const data = await res.json();
       setRewards(data);
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchRestaurants = async () => {
+    try {
+      const res = await fetch('https://wiranqa-backend.onrender.com/api/restaurants');
+      const data = await res.json();
+      setRestaurants(data);
     } catch (e) { console.error(e); }
   };
 
@@ -118,29 +118,22 @@ function App() {
       });
       const data = await res.json();
       setLoading(false);
-      if (data.success) {
+      
+      // Si la respuesta NO es exitosa, mostramos el mensaje real del servidor
+      if (res.ok && data.success) {
         setPoints(data.data.points);
         setLevel(data.data.level);
         setMessage(data.message);
-        if (data.data.history) {
-          setHistory(data.data.history);
-          const newStats = {
-            totalBottles: data.data.history.filter(h => h.displayName === 'Botella WIRANQA').length,
-            totalShops: data.data.history.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
-            totalCombos: data.data.history.filter(h => h.displayName === 'Combo Amigos').length,
-            totalRedeems: data.data.history.filter(h => h.displayName.includes('Canje')).length
-          };
-          setStats(newStats);
-        }
+        if (data.data.history) setHistory(data.data.history);
         setScanning(false);
       } else {
-        setMessage(data.message);
+        setMessage(data.message || '❌ Ocurrió un error.');
         setScanning(false);
       }
     } catch (error) {
       setLoading(false);
       setScanning(false);
-      setMessage('❌ Error de conexión.');
+      setMessage('❌ No pudimos conectar con el servidor.');
     } finally {
       setTimeout(() => setMessage(''), 4000);
       isProcessing.current = false;
@@ -204,6 +197,13 @@ function App() {
       setTimeout(() => setMessage(''), 4000);
       return;
     }
+    // El cliente debe elegir el local
+    if (!selectedRestaurant) {
+      setMessage('❌ Primero debes elegir en qué local quieres canjear.');
+      setTimeout(() => setMessage(''), 4000);
+      return;
+    }
+    
     setLoading(true);
     try {
       const res = await fetch('https://wiranqa-backend.onrender.com/api/redeem', {
@@ -236,7 +236,6 @@ function App() {
             <p className="text-xs text-slate-500 font-medium tracking-widest">Cerveza Artesanal Ayacuchana</p>
           </div>
 
-          {/* MENSAJE AMIGABLE DE CONEXIÓN */}
           <div className={`mb-4 p-3 rounded-xl transition-all duration-500 ease-in-out ${
             backendStatus === 'Online' 
               ? 'bg-emerald-50 border border-emerald-300 shadow-sm' 
@@ -284,6 +283,22 @@ function App() {
             <div className="mt-4">
               <h3 className="text-lg font-bold text-slate-800 mb-2">🎁 Catálogo de Premios</h3>
               <p className="text-sm text-slate-500 mb-4">Tienes ⭐ {points} estrellas</p>
+              
+              {/* Selección de restaurante */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-slate-700 mb-2">Elige el local para canjear:</label>
+                <select 
+                  value={selectedRestaurant || ''} 
+                  onChange={(e) => setSelectedRestaurant(Number(e.target.value))}
+                  className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500"
+                >
+                  <option value="">-- Selecciona un local --</option>
+                  {restaurants.map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="space-y-3">
                 {rewards.length === 0 ? <p className="text-sm text-slate-400">Cargando premios...</p> : (
                   rewards.map((reward) => (
@@ -337,34 +352,18 @@ function App() {
 
               <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                 <div className="flex justify-between items-center mb-2">
-                  <label className="block text-sm font-bold text-slate-700">📊 Resumen de Consumos</label>
-                  <button onClick={() => setShowStats(!showStats)} className="text-sm text-amber-600 hover:text-amber-700 flex items-center gap-1">
-                    {showStats ? '👁️ Ocultar' : '👁️ Ver'}
-                  </button>
+                  <label className="block text-sm font-bold text-slate-700">📊 Mis Consumos</label>
                 </div>
-                {showStats && (
-                  <div className="flex justify-between text-sm mt-2">
-                    <span>🍺 Botellas: <strong>{stats.totalBottles}</strong></span>
-                    <span>🥤 Vasos Shop: <strong>{stats.totalShops}</strong></span>
-                    <span>🎉 Combos: <strong>{stats.totalCombos}</strong></span>
-                    <span>🎁 Canjes: <strong>{stats.totalRedeems}</strong></span>
-                  </div>
-                )}
-              </div>
-
-              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <button onClick={() => setShowLevelLegend(!showLevelLegend)} className="w-full py-2 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 text-sm font-bold">
-                  {showLevelLegend ? 'Ocultar Leyenda de Niveles' : '📜 Ver Leyenda de Niveles'}
-                </button>
-                {showLevelLegend && (
-                  <div className="mt-3 space-y-2 text-xs border-t border-slate-200 pt-3">
-                    <div className="flex items-center gap-2"><span>🏆</span><span><strong>LEYENDA AYACUCHANA</strong> (100+) - Eres parte de la historia.</span></div>
-                    <div className="flex items-center gap-2"><span>🍺</span><span><strong>MAESTRO WIRANQERO</strong> (50+) - Un conocedor del lúpulo.</span></div>
-                    <div className="flex items-center gap-2"><span>⭐</span><span><strong>WIRANQERO EXPERTO</strong> (25+) - Ya sabes lo que es buena cerveza.</span></div>
-                    <div className="flex items-center gap-2"><span>🌱</span><span><strong>WIRANQERO NOVATO</strong> (10+) - Estás empezando tu viaje.</span></div>
-                    <div className="flex items-center gap-2"><span>🍺</span><span><strong>Descubre WIRANQA</strong> (0+) - El inicio de tu viaje cervecero.</span></div>
-                  </div>
-                )}
+                <div className="text-sm text-slate-600">
+                  {history.length === 0 ? <p className="text-slate-400">Aún sin consumos.</p> : (
+                    history.map((item, idx) => (
+                      <div key={idx} className="flex justify-between border-b border-slate-100 py-1">
+                        <span>{item.restaurants ? item.restaurants.name : 'Local'}</span>
+                        <span className="text-xs text-slate-400">{item.action_type === 'scan' ? '🍺 Consumo' : '🎁 Canje'}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
 
               <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
