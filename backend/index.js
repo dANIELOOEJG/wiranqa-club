@@ -1,7 +1,6 @@
 const express = require('express');
 const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
-const QRCode = require('qrcode');
 require('dotenv').config();
 
 const app = express();
@@ -36,7 +35,7 @@ const getLevel = (points) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
 
-// --- ESCANEO DEL QR DEL RESTAURANTE ---
+// --- ESCANEO INFINITO DEL QR DEL RESTAURANTE ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
@@ -46,24 +45,26 @@ app.post('/api/scan', async (req, res) => {
   if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
+    // 🔍 Buscar restaurante por su QR actual
     const { data: restaurant, error } = await supabase
       .from('restaurants')
       .select('*')
       .eq('current_qr_code', code)
       .maybeSingle();
 
+    // Si el QR no existe en la base de datos, es porque fue cambiado o no está registrado
     if (!restaurant) {
-      return res.status(404).json({ message: '❌ Este QR ya no es válido. El restaurante generó uno nuevo.' });
+      return res.status(404).json({ message: '❌ Este QR no está registrado en el sistema.' });
     }
 
-    // Registrar consumo
+    // ✅ REGISTRAMOS EL CONSUMO (Se registra cada vez, sin límite)
     await supabase.from('history').insert({
       device_id: deviceId,
       restaurant_id: restaurant.id,
       action_type: 'scan'
     });
 
-    // Sumar estrella
+    // ✅ SUMAMOS 1 ESTRELLA (Siempre suma 1 por cada escaneo del QR)
     const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
     let finalPoints = 1;
     if (existingUser) {
@@ -73,7 +74,7 @@ app.post('/api/scan', async (req, res) => {
       await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
     }
 
-    // Devolver datos actualizados
+    // ✅ Devolvemos los datos actualizados del cliente
     const { data: history } = await supabase
       .from('history')
       .select('*, restaurants(name)')
@@ -91,7 +92,7 @@ app.post('/api/scan', async (req, res) => {
   }
 });
 
-// --- LOGIN DEL RESTAURANTE ---
+// --- RESTANTES DE RUTAS ---
 app.post('/api/restaurant/login', async (req, res) => {
   const { username, password } = req.body;
   const { data, error } = await supabase.from('restaurants').select('*').eq('username', username).eq('password', password).single();
@@ -99,32 +100,14 @@ app.post('/api/restaurant/login', async (req, res) => {
   res.json({ success: true, restaurant: data });
 });
 
-// --- GENERAR NUEVO QR (CON IMAGEN) ---
 app.post('/api/restaurant/generate-qr', async (req, res) => {
   const { restaurantId } = req.body;
-  
-  // Generamos un código único
   const newCode = `WIRANQA-LOCAL-${restaurantId}-${Date.now()}`;
-  
-  // Actualizar la base de datos
   const { error } = await supabase.from('restaurants').update({ current_qr_code: newCode }).eq('id', restaurantId);
   if (error) return res.status(500).json({ error: error.message });
-
-  // Generar la imagen QR en formato Base64
-  const qrDataUrl = await QRCode.toDataURL(`https://wiranqa-club-sepia.vercel.app/?code=${newCode}`, {
-    width: 200,
-    margin: 2
-  });
-
-  // Devolver el código y la imagen
-  res.json({ 
-    success: true, 
-    newQrCode: newCode, 
-    newQrImage: qrDataUrl 
-  });
+  res.json({ success: true, newQrCode: newCode });
 });
 
-// --- ESTADÍSTICAS DEL RESTAURANTE ---
 app.get('/api/restaurant/stats/:restaurantId', async (req, res) => {
   const { restaurantId } = req.params;
   const { data: logs } = await supabase.from('history').select('action_type').eq('restaurant_id', restaurantId);
@@ -134,13 +117,11 @@ app.get('/api/restaurant/stats/:restaurantId', async (req, res) => {
   res.json({ totalScans, totalRedeems, totalClients });
 });
 
-// --- LISTAR RESTAURANTES ---
 app.get('/api/restaurants', async (req, res) => {
   const { data } = await supabase.from('restaurants').select('id, name');
   res.json(data);
 });
 
-// --- DATOS DEL CLIENTE ---
 app.get('/api/user/:deviceId', async (req, res) => {
   const { deviceId } = req.params;
   const { data: user } = await supabase.from('users').select('*').eq('device_id', deviceId).single();
@@ -150,7 +131,6 @@ app.get('/api/user/:deviceId', async (req, res) => {
   res.json({ points, nickname: user ? user.nickname : levelInfo.defaultNickname, level: levelInfo, name: user ? user.name : null, dni: user ? user.dni : null, email: user ? user.email : null, history: history || [] });
 });
 
-// --- ACTUALIZAR APODO ---
 app.post('/api/user/update', async (req, res) => {
   const { deviceId, nickname } = req.body;
   if (!deviceId || !nickname) return res.status(400).json({ error: 'Datos incompletos' });
@@ -159,7 +139,6 @@ app.post('/api/user/update', async (req, res) => {
   res.json({ success: true });
 });
 
-// --- REGISTRO ---
 app.post('/api/user/register', async (req, res) => {
   const { deviceId, name, dni, email } = req.body;
   if (!deviceId || !name || !dni || !email) return res.status(400).json({ error: 'Datos incompletos' });
@@ -168,7 +147,6 @@ app.post('/api/user/register', async (req, res) => {
   res.json({ success: true });
 });
 
-// --- CANJE ---
 app.post('/api/redeem', async (req, res) => {
   const { deviceId, rewardId, restaurantId } = req.body;
   if (!deviceId || !rewardId || !restaurantId) return res.status(400).json({ error: 'Datos incompletos' });
@@ -182,7 +160,6 @@ app.post('/api/redeem', async (req, res) => {
   res.json({ success: true, message: `🎉 ¡Has canjeado tu premio en el local! Te quedan ${updatedUser.points} estrellas.`, data: updatedUser });
 });
 
-// --- PREMIOS ---
 app.get('/api/rewards', async (req, res) => {
   try {
     const { count } = await supabase.from('rewards').select('*', { count: 'exact', head: true });
