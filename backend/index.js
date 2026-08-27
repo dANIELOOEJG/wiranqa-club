@@ -35,7 +35,7 @@ const getLevel = (points) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
 
-// --- ESCANEO INFINITO DEL QR DEL RESTAURANTE ---
+// --- ✅ RUTA DE ESCANEO (POST) ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
@@ -45,26 +45,22 @@ app.post('/api/scan', async (req, res) => {
   if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
-    // 🔍 Buscar restaurante por su QR actual
     const { data: restaurant, error } = await supabase
       .from('restaurants')
       .select('*')
       .eq('current_qr_code', code)
       .maybeSingle();
 
-    // Si el QR no existe en la base de datos, es porque fue cambiado o no está registrado
     if (!restaurant) {
-      return res.status(404).json({ message: '❌ Este QR no está registrado en el sistema.' });
+      return res.status(404).json({ message: '❌ Este QR ya no es válido. El restaurante generó uno nuevo.' });
     }
 
-    // ✅ REGISTRAMOS EL CONSUMO (Se registra cada vez, sin límite)
     await supabase.from('history').insert({
       device_id: deviceId,
       restaurant_id: restaurant.id,
       action_type: 'scan'
     });
 
-    // ✅ SUMAMOS 1 ESTRELLA (Siempre suma 1 por cada escaneo del QR)
     const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
     let finalPoints = 1;
     if (existingUser) {
@@ -74,7 +70,6 @@ app.post('/api/scan', async (req, res) => {
       await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
     }
 
-    // ✅ Devolvemos los datos actualizados del cliente
     const { data: history } = await supabase
       .from('history')
       .select('*, restaurants(name)')
