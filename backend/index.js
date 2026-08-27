@@ -6,6 +6,7 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- SEGURIDAD Y CORS ---
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -16,6 +17,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '10mb' }));
 
+// --- CONEXIÓN A SUPABASE ---
 const supabaseUrl = 'https://qwjjrwiurhyoszhlsdgd.supabase.co';
 const supabaseKey = 'sb_publishable_mnBY2b4fmjt9NdwmtBBt2A_L-avhMjm';
 const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -25,47 +27,47 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 
 console.log('✅ Conectado a Supabase vía API REST');
 
-const levelLegend = {
-  1: { title: 'Descubre WIRANQA', emoji: '🍺', desc: 'El inicio de tu viaje cervecero.' },
-  2: { title: 'WIRANQERO NOVATO', emoji: '🌱', desc: 'Estás empezando a disfrutar del buen sabor.' },
-  3: { title: 'WIRANQERO EXPERTO', emoji: '⭐', desc: 'Ya sabes lo que es una buena cerveza artesanal.' },
-  4: { title: 'MAESTRO WIRANQERO', emoji: '🍺', desc: 'Un conocedor del lúpulo y la malta.' },
-  5: { title: 'LEYENDA AYACUCHANA', emoji: '🏆', desc: 'Eres parte de la historia de WIRANQA.' }
-};
-
+// --- NIVELES DE CLIENTE ---
 const getLevel = (points) => {
-  if (points >= 100) return { id: 5, ...levelLegend[5], defaultNickname: 'Leyenda WIRANQA' };
-  if (points >= 50) return { id: 4, ...levelLegend[4], defaultNickname: 'Maestro Cervecero' };
-  if (points >= 25) return { id: 3, ...levelLegend[3], defaultNickname: 'Experto en Lúpulo' };
-  if (points >= 10) return { id: 2, ...levelLegend[2], defaultNickname: 'Nuevo Catador' };
-  return { id: 1, ...levelLegend[1], defaultNickname: 'Viajero WIRANQA' };
+  if (points >= 100) return { id: 5, title: '🏆 LEYENDA AYACUCHANA', defaultNickname: 'Leyenda WIRANQA' };
+  if (points >= 50) return { id: 4, title: '🍺 MAESTRO WIRANQERO', defaultNickname: 'Maestro Cervecero' };
+  if (points >= 25) return { id: 3, title: '⭐ WIRANQERO EXPERTO', defaultNickname: 'Experto en Lúpulo' };
+  if (points >= 10) return { id: 2, title: '🌱 WIRANQERO NOVATO', defaultNickname: 'Nuevo Catador' };
+  return { id: 1, title: '🍺 Descubre WIRANQA', defaultNickname: 'Viajero WIRANQA' };
 };
 
-app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
+// --- FUNCIÓN AUXILIAR PARA BUSCAR RESTAURANTE POR QR ---
+const getRestaurantByQR = async (code) => {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .select('*')
+    .eq('current_qr_code', code)
+    .single();
+  return { data, error };
+};
+
+// --- RUTAS DE USUARIO (CLIENTE) ---
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'WIRANQA Backend running' });
+});
 
 app.get('/api/user/:deviceId', async (req, res) => {
   const { deviceId } = req.params;
   try {
-    const { data: user } = await supabase.from('users').select('points, nickname, name, dni, email').eq('device_id', deviceId).single();
-    const { data: history } = await supabase.from('history').select('unique_code, redeemed_at').eq('device_id', deviceId).order('redeemed_at', { ascending: false });
+    const { data: user } = await supabase
+      .from('users')
+      .select('points, nickname, name, dni, email')
+      .eq('device_id', deviceId)
+      .single();
 
-    const formattedHistory = (history || []).map(item => {
-      let displayName = 'Botella WIRANQA';
-      if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
-      if (item.unique_code.includes('Combo')) displayName = 'Combo Amigos';
-      if (item.unique_code.includes('Canje')) displayName = 'Canje: ' + item.unique_code.replace('Canje: ', '');
-      return { ...item, displayName };
-    });
+    const { data: history } = await supabase
+      .from('history')
+      .select('*, restaurants(name)')
+      .eq('device_id', deviceId)
+      .order('redeemed_at', { ascending: false });
 
     const points = user ? user.points : 0;
     const levelInfo = getLevel(points);
-
-    const stats = {
-      totalBottles: formattedHistory.filter(h => h.displayName === 'Botella WIRANQA').length,
-      totalShops: formattedHistory.filter(h => h.displayName === 'Vaso Shop WIRANQA').length,
-      totalCombos: formattedHistory.filter(h => h.displayName === 'Combo Amigos').length,
-      totalRedeems: formattedHistory.filter(h => h.displayName.includes('Canje')).length
-    };
 
     res.json({
       points,
@@ -74,93 +76,106 @@ app.get('/api/user/:deviceId', async (req, res) => {
       name: user ? user.name : null,
       dni: user ? user.dni : null,
       email: user ? user.email : null,
-      history: formattedHistory,
-      stats
+      history: history || []
     });
   } catch (err) {
     console.error('❌ Error en /api/user:', err.message);
-    res.status(500).json({ error: 'Error interno' });
+    res.status(500).json({ error: 'Error interno al obtener usuario' });
   }
 });
 
 app.post('/api/user/update', async (req, res) => {
   const { deviceId, nickname } = req.body;
   if (!deviceId || !nickname) return res.status(400).json({ error: 'Datos incompletos' });
-  await supabase.from('users').update({ nickname }).eq('device_id', deviceId);
+  const { error } = await supabase.from('users').update({ nickname }).eq('device_id', deviceId);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
 
 app.post('/api/user/register', async (req, res) => {
   const { deviceId, name, dni, email } = req.body;
   if (!deviceId || !name || !dni || !email) return res.status(400).json({ error: 'Datos incompletos' });
-  await supabase.from('users').update({ name, dni, email }).eq('device_id', deviceId);
+  const { error } = await supabase.from('users').update({ name, dni, email }).eq('device_id', deviceId);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
 
+// --- RUTA DE ESCANEO (CON RESTAURANTE) ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
   const code = rawCode ? rawCode.trim() : '';
   const deviceId = rawDeviceId ? rawDeviceId.trim() : '';
+
   if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
-    const { data: bottle } = await supabase.from('bottles').select('*').eq('unique_code', code).single();
-    if (!bottle) return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
-    if (bottle.is_redeemed) return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
+    // 1. Buscar si el código pertenece a un restaurante (QR de local)
+    const restaurantResult = await getRestaurantByQR(code);
+    
+    if (restaurantResult.data) {
+      // ✅ Si es un QR de restaurante, registramos en restaurant_logs
+      const { error: logError } = await supabase
+        .from('restaurant_logs')
+        .insert({ restaurant_id: restaurantResult.data.id, action_type: 'scan', client_device_id: deviceId });
 
-    await supabase.from('bottles').update({ is_redeemed: true }).eq('id', bottle.id);
-    await supabase.from('history').insert({ device_id: deviceId, unique_code: code });
+      if (logError) return res.status(500).json({ message: `Error al registrar en local: ${logError.message}` });
 
-    const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
-    let finalPoints = 1;
-    if (existingUser) {
-      finalPoints = existingUser.points + 1;
-      await supabase.from('users').update({ points: finalPoints }).eq('device_id', deviceId);
+      // Sumar estrella al cliente
+      const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
+      let finalPoints = 1;
+      if (existingUser) {
+        finalPoints = existingUser.points + 1;
+        await supabase.from('users').update({ points: finalPoints }).eq('device_id', deviceId);
+      } else {
+        await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
+      }
+
+      // Guardar en historial del cliente con restaurante
+      await supabase.from('history').insert({ device_id: deviceId, unique_code: code, restaurant_id: restaurantResult.data.id, action_type: 'scan' });
+
+      const { data: history } = await supabase.from('history').select('*, restaurants(name)').eq('device_id', deviceId).order('redeemed_at', { ascending: false });
+
+      res.json({
+        success: true,
+        message: `✅ ¡Has ganado 1 estrella en ${restaurantResult.data.name}!`,
+        data: { points: finalPoints, level: getLevel(finalPoints), history: history || [] }
+      });
     } else {
-      await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
+      // ✅ Si NO es QR de restaurante, es una botella normal
+      const { data: bottle } = await supabase.from('bottles').select('*').eq('unique_code', code).single();
+      if (!bottle) return res.status(404).json({ message: '❌ Esta WIRANQA no pertenece a nuestro lote.' });
+      if (bottle.is_redeemed) return res.status(400).json({ message: '⚠️ Esta WIRANQA ya fue disfrutada.' });
+
+      await supabase.from('bottles').update({ is_redeemed: true }).eq('id', bottle.id);
+      
+      const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
+      let finalPoints = 1;
+      if (existingUser) {
+        finalPoints = existingUser.points + 1;
+        await supabase.from('users').update({ points: finalPoints }).eq('device_id', deviceId);
+      } else {
+        await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
+      }
+
+      await supabase.from('history').insert({ device_id: deviceId, unique_code: code, action_type: 'scan' });
+      const { data: history } = await supabase.from('history').select('*').eq('device_id', deviceId).order('redeemed_at', { ascending: false });
+
+      res.json({
+        success: true,
+        message: '✅ ¡Has ganado 1 estrella!',
+        data: { points: finalPoints, level: getLevel(finalPoints), history: history || [] }
+      });
     }
-
-    const { data: history } = await supabase.from('history').select('unique_code, redeemed_at').eq('device_id', deviceId).order('redeemed_at', { ascending: false });
-    const formattedHistory = (history || []).map(item => {
-      let displayName = 'Botella WIRANQA';
-      if (item.unique_code.includes('Vaso')) displayName = 'Vaso Shop WIRANQA';
-      if (item.unique_code.includes('Combo')) displayName = 'Combo Amigos';
-      if (item.unique_code.includes('Canje')) displayName = 'Canje: ' + item.unique_code.replace('Canje: ', '');
-      return { ...item, displayName };
-    });
-
-    res.json({
-      success: true,
-      message: `✅ ¡Has ganado 1 estrella!`,
-      data: { points: finalPoints, level: getLevel(finalPoints), history: formattedHistory }
-    });
   } catch (err) {
     console.error('❌ Error crítico en /api/scan:', err.message);
-    res.status(500).json({ message: 'Error interno del servidor' });
+    res.status(500).json({ message: 'Error interno del servidor al procesar el escaneo' });
   }
 });
 
-app.get('/api/rewards', async (req, res) => {
-  try {
-    const { count } = await supabase.from('rewards').select('*', { count: 'exact', head: true });
-    if (count === 0) {
-      await supabase.from('rewards').insert([
-        { name: 'Cerveza WIRANQA', cost: 6 },
-        { name: 'Vaso Shop WIRANQA', cost: 6, description: 'Vaso de vidrio de 350ml' },
-        { name: 'Combo Amigos (4 personas)', cost: 40, description: '1 ronda gratis de vasos shop' },
-        { name: 'Combo Amigos (5+ personas)', cost: 100, description: '1 ronda gratis de vasos shop' }
-      ]);
-    }
-    const { data } = await supabase.from('rewards').select('*');
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+// --- RUTA DE CANJE (CON RESTAURANTE) ---
 app.post('/api/redeem', async (req, res) => {
-  const { deviceId, rewardId } = req.body;
+  const { deviceId, rewardId, restaurantId } = req.body;
   if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
 
   try {
@@ -171,8 +186,14 @@ app.post('/api/redeem', async (req, res) => {
     if (!user || user.points < reward.cost) return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
 
     await supabase.from('users').update({ points: user.points - reward.cost }).eq('device_id', deviceId);
-    // Guardar en el historial como canje
-    await supabase.from('history').insert({ device_id: deviceId, unique_code: `Canje: ${reward.name}` });
+    
+    // Registrar canje en historial del cliente
+    await supabase.from('history').insert({ device_id: deviceId, unique_code: `Canje: ${reward.name}`, restaurant_id: restaurantId || null, action_type: 'redeem' });
+
+    // Registrar canje en restaurant_logs si aplica
+    if (restaurantId) {
+      await supabase.from('restaurant_logs').insert({ restaurant_id: restaurantId, action_type: 'redeem', client_device_id: deviceId });
+    }
 
     const { data: updatedUser } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
 
@@ -184,6 +205,68 @@ app.post('/api/redeem', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// --- RUTA PARA LOGIN DE RESTAURANTES ---
+app.post('/api/restaurant/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Datos incompletos' });
+
+  try {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('*')
+      .eq('username', username)
+      .eq('password', password)
+      .single();
+
+    if (error || !data) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+
+    res.json({ success: true, restaurant: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- RUTA PARA RESETEAR QR DEL RESTAURANTE ---
+app.post('/api/restaurant/reset-qr', async (req, res) => {
+  const { restaurantId } = req.body;
+  if (!restaurantId) return res.status(400).json({ error: 'Datos incompletos' });
+
+  try {
+    // Generamos un nuevo código QR único
+    const newCode = `WIRANQA-REST-${restaurantId}-${Date.now()}`;
+    await supabase.from('restaurants').update({ current_qr_code: newCode }).eq('id', restaurantId);
+
+    res.json({ success: true, newQrCode: newCode });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- RUTA PARA VER ESTADÍSTICAS DEL RESTAURANTE ---
+app.get('/api/restaurant/stats/:restaurantId', async (req, res) => {
+  const { restaurantId } = req.params;
+  try {
+    const { data: scans } = await supabase
+      .from('restaurant_logs')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .eq('action_type', 'scan');
+
+    const { data: redeems } = await supabase
+      .from('restaurant_logs')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .eq('action_type', 'redeem');
+
+    res.json({
+      totalScans: scans ? scans.length : 0,
+      totalRedeems: redeems ? redeems.length : 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

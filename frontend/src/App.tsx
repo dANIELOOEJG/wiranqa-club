@@ -21,6 +21,7 @@ function App() {
   const [isRegistered, setIsRegistered] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showLevelLegend, setShowLevelLegend] = useState(false);
+  const [selectedRestaurant, setSelectedRestaurant] = useState(null); // Para canjear en un restaurante específico
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
@@ -34,6 +35,22 @@ function App() {
     }
     return id;
   };
+
+  // 🚀 KEEP ALIVE: Para que el backend nunca se duerma (Carga Instantánea)
+  useEffect(() => {
+    const keepAlive = async () => {
+      try {
+        await fetch('https://wiranqa-backend.onrender.com/health');
+      } catch (e) {
+        // Ignorar errores momentáneos
+      }
+    };
+    
+    keepAlive(); // Llamamos al inicio
+    const interval = setInterval(keepAlive, 60000); // Cada 60 segundos
+    
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const id = getDeviceId();
@@ -192,7 +209,7 @@ function App() {
       const res = await fetch('https://wiranqa-backend.onrender.com/api/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId, rewardId })
+        body: JSON.stringify({ deviceId, rewardId, restaurantId: selectedRestaurant })
       });
       const data = await res.json();
       if (data.success) {
@@ -219,6 +236,7 @@ function App() {
             <p className="text-xs text-slate-500 font-medium tracking-widest">Cerveza Artesanal Ayacuchana</p>
           </div>
 
+          {/* MENSAJE AMIGABLE DE CONEXIÓN */}
           <div className={`mb-4 p-3 rounded-xl transition-all duration-500 ease-in-out ${
             backendStatus === 'Online' 
               ? 'bg-emerald-50 border border-emerald-300 shadow-sm' 
@@ -229,7 +247,7 @@ function App() {
                 ? 'text-emerald-700' 
                 : 'text-slate-500'
             }`}>
-              {backendStatus === 'Online' ? '🍺 ¡Bienvenido, WIRANQERO!' : '⏳ Conectando...'}
+              {backendStatus === 'Online' ? '🍺 ¡Bienvenido, WIRANQERO!' : '🍺 Preparando tu experiencia WIRANQA...'}
             </h2>
           </div>
 
