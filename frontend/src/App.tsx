@@ -520,22 +520,26 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Gestión del QR */}
+                   {/* Gestión del QR */}
                   <div className="bg-white p-4 rounded-lg border border-slate-200 mb-6">
                     <p className="text-sm font-bold text-slate-700 mb-2">📱 Código QR Actual</p>
-                    <p className="text-xs font-mono text-slate-500 mb-4 break-all">{restaurantData.current_qr_code}</p>
-                    <button 
-                      onClick={handleGenerateNewQR}
-                      className="w-full py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700 text-sm"
-                    >
-                      🔄 Generar Nuevo QR Único
-                    </button>
-                    {newQrCode && (
-                      <div className="mt-4 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
-                        <p className="text-sm font-bold text-emerald-700 mb-1">✅ Nuevo QR Generado:</p>
-                        <p className="text-xs font-mono text-emerald-700 break-all">{newQrCode}</p>
-                      </div>
-                    )}
+                    {/* Ocultamos el texto técnico y mostramos el botón */}
+                    <div className="mt-4 bg-emerald-50 p-3 rounded-lg border border-emerald-200 text-center">
+                      <p className="text-xs text-emerald-700 mb-1">
+                        El código actual es válido. Si lo deseas, puedes generar uno nuevo.
+                      </p>
+                      <button 
+                        onClick={handleGenerateNewQR}
+                        className="w-full py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700 text-sm mt-2"
+                      >
+                        🔄 Generar Nuevo QR Único
+                      </button>
+                      {newQrCode && (
+                        <p className="text-xs font-mono text-emerald-700 break-all mt-2">
+                          ✅ Nuevo código generado: {newQrCode}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   <button 
