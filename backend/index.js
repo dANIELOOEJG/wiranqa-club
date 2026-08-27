@@ -35,110 +35,7 @@ const getLevel = (points) => {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
 
-// --- RUTA PARA LOGIN DE RESTAURANTES ---
-app.post('/api/restaurant/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Datos incompletos' });
-
-  try {
-    const { data, error } = await supabase
-      .from('restaurants')
-      .select('*')
-      .eq('username', username)
-      .eq('password', password)
-      .single();
-
-    if (error || !data) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
-    res.json({ success: true, restaurant: data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- RUTA PARA CREAR NUEVO QR ÚNICO (RESETEO) ---
-app.post('/api/restaurant/generate-qr', async (req, res) => {
-  const { restaurantId } = req.body;
-  if (!restaurantId) return res.status(400).json({ error: 'Datos incompletos' });
-
-  try {
-    const newCode = `WIRANQA-LOCAL-${restaurantId}-${Date.now()}`;
-    
-    const { error } = await supabase
-      .from('restaurants')
-      .update({ current_qr_code: newCode })
-      .eq('id', restaurantId);
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, newQrCode: newCode });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- RUTA PARA VER ESTADÍSTICAS DEL RESTAURANTE ---
-app.get('/api/restaurant/stats/:restaurantId', async (req, res) => {
-  const { restaurantId } = req.params;
-  try {
-    const { data: logs } = await supabase
-      .from('history')
-      .select('action_type')
-      .eq('restaurant_id', restaurantId);
-
-    const totalScans = logs.filter(l => l.action_type === 'scan').length;
-    const totalRedeems = logs.filter(l => l.action_type === 'redeem').length;
-    const totalClients = new Set(logs.filter(l => l.action_type === 'scan').map(l => l.device_id)).size;
-
-    res.json({ totalScans, totalRedeems, totalClients });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- RUTA PARA LISTAR RESTAURANTES (PARA QUE EL CLIENTE ELIJA EL LOCAL) ---
-app.get('/api/restaurants', async (req, res) => {
-  try {
-    const { data } = await supabase.from('restaurants').select('id, name');
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// --- RUTA PARA EL CLIENTE ---
-app.get('/api/user/:deviceId', async (req, res) => {
-  const { deviceId } = req.params;
-  try {
-    const { data: user } = await supabase
-      .from('users')
-      .select('*')
-      .eq('device_id', deviceId)
-      .single();
-
-    const { data: history } = await supabase
-      .from('history')
-      .select('*, restaurants(name)')
-      .eq('device_id', deviceId)
-      .order('created_at', { ascending: false });
-
-    const points = user ? user.points : 0;
-    const levelInfo = getLevel(points);
-
-    res.json({
-      points,
-      nickname: user ? user.nickname : levelInfo.defaultNickname,
-      level: levelInfo,
-      name: user ? user.name : null,
-      dni: user ? user.dni : null,
-      email: user ? user.email : null,
-      history: history || []
-    });
-  } catch (err) {
-    console.error('❌ Error en /api/user:', err.message);
-    res.status(500).json({ error: 'Error interno' });
-  }
-});
-
-// --- RUTA PARA ESCANEAR QR DEL LOCAL ---
+// --- ESCANEO INFINITO DEL QR DEL RESTAURANTE ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
@@ -148,38 +45,27 @@ app.post('/api/scan', async (req, res) => {
   if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
-    // Buscar restaurante por su QR
+    // 🔍 Buscar restaurante por su QR actual
     const { data: restaurant, error } = await supabase
       .from('restaurants')
       .select('*')
       .eq('current_qr_code', code)
-      .single();
-
-    if (!restaurant) return res.status(404).json({ message: '❌ Este QR ya no es válido. El local generó uno nuevo.' });
-
-    // Verificar si el cliente YA escaneó este QR
-    const { data: existingScan } = await supabase
-      .from('history')
-      .select('*')
-      .eq('device_id', deviceId)
-      .eq('restaurant_id', restaurant.id)
-      .eq('action_type', 'scan')
       .maybeSingle();
 
-    if (existingScan) return res.status(400).json({ message: `⚠️ Ya escaneaste el QR de ${restaurant.name}. Pide el nuevo QR al local.` });
+    // ❌ Si el QR fue cambiado por el restaurante, este ya no sirve
+    if (!restaurant) {
+      return res.status(404).json({ message: '❌ Este QR ya no es válido. El restaurante generó uno nuevo.' });
+    }
 
-    // Registrar el escaneo
-    await supabase
-      .from('history')
-      .insert({ device_id: deviceId, restaurant_id: restaurant.id, action_type: 'scan' });
+    // ✅ REGISTRAMOS EL CONSUMO (Se registra cada vez, sin límite)
+    await supabase.from('history').insert({
+      device_id: deviceId,
+      restaurant_id: restaurant.id,
+      action_type: 'scan'
+    });
 
-    // Sumar estrella al cliente
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('points')
-      .eq('device_id', deviceId)
-      .maybeSingle();
-
+    // ✅ SUMAMOS 1 ESTRELLA (Siempre suma 1 por cada escaneo del QR)
+    const { data: existingUser } = await supabase.from('users').select('points').eq('device_id', deviceId).maybeSingle();
     let finalPoints = 1;
     if (existingUser) {
       finalPoints = existingUser.points + 1;
@@ -188,7 +74,7 @@ app.post('/api/scan', async (req, res) => {
       await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
     }
 
-    // Devolver datos actualizados
+    // ✅ Devolvemos los datos actualizados del cliente
     const { data: history } = await supabase
       .from('history')
       .select('*, restaurants(name)')
@@ -206,40 +92,76 @@ app.post('/api/scan', async (req, res) => {
   }
 });
 
-// --- RUTA PARA CANJEAR PREMIO (EN EL LOCAL ELEGIDO) ---
+// --- RESTANTES DE RUTAS ---
+app.post('/api/restaurant/login', async (req, res) => {
+  const { username, password } = req.body;
+  const { data, error } = await supabase.from('restaurants').select('*').eq('username', username).eq('password', password).single();
+  if (error || !data) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+  res.json({ success: true, restaurant: data });
+});
+
+app.post('/api/restaurant/generate-qr', async (req, res) => {
+  const { restaurantId } = req.body;
+  const newCode = `WIRANQA-LOCAL-${restaurantId}-${Date.now()}`;
+  const { error } = await supabase.from('restaurants').update({ current_qr_code: newCode }).eq('id', restaurantId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, newQrCode: newCode });
+});
+
+app.get('/api/restaurant/stats/:restaurantId', async (req, res) => {
+  const { restaurantId } = req.params;
+  const { data: logs } = await supabase.from('history').select('action_type').eq('restaurant_id', restaurantId);
+  const totalScans = logs.filter(l => l.action_type === 'scan').length;
+  const totalRedeems = logs.filter(l => l.action_type === 'redeem').length;
+  const totalClients = new Set(logs.filter(l => l.action_type === 'scan').map(l => l.device_id)).size;
+  res.json({ totalScans, totalRedeems, totalClients });
+});
+
+app.get('/api/restaurants', async (req, res) => {
+  const { data } = await supabase.from('restaurants').select('id, name');
+  res.json(data);
+});
+
+app.get('/api/user/:deviceId', async (req, res) => {
+  const { deviceId } = req.params;
+  const { data: user } = await supabase.from('users').select('*').eq('device_id', deviceId).single();
+  const { data: history } = await supabase.from('history').select('*, restaurants(name)').eq('device_id', deviceId).order('created_at', { ascending: false });
+  const points = user ? user.points : 0;
+  const levelInfo = getLevel(points);
+  res.json({ points, nickname: user ? user.nickname : levelInfo.defaultNickname, level: levelInfo, name: user ? user.name : null, dni: user ? user.dni : null, email: user ? user.email : null, history: history || [] });
+});
+
+app.post('/api/user/update', async (req, res) => {
+  const { deviceId, nickname } = req.body;
+  if (!deviceId || !nickname) return res.status(400).json({ error: 'Datos incompletos' });
+  const { error } = await supabase.from('users').update({ nickname }).eq('device_id', deviceId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+app.post('/api/user/register', async (req, res) => {
+  const { deviceId, name, dni, email } = req.body;
+  if (!deviceId || !name || !dni || !email) return res.status(400).json({ error: 'Datos incompletos' });
+  const { error } = await supabase.from('users').update({ name, dni, email }).eq('device_id', deviceId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
 app.post('/api/redeem', async (req, res) => {
   const { deviceId, rewardId, restaurantId } = req.body;
   if (!deviceId || !rewardId || !restaurantId) return res.status(400).json({ error: 'Datos incompletos' });
-
-  try {
-    const { data: reward } = await supabase.from('rewards').select('cost').eq('id', rewardId).single();
-    if (!reward) return res.status(404).json({ message: 'Premio no disponible' });
-
-    const { data: user } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
-    if (!user || user.points < reward.cost) return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
-
-    await supabase.from('users').update({ points: user.points - reward.cost }).eq('device_id', deviceId);
-    
-    // Registrar el canje en el local
-    await supabase.from('history').insert({ device_id: deviceId, restaurant_id: restaurantId, action_type: 'redeem' });
-
-    const { data: updatedUser } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
-
-    res.json({
-      success: true,
-      message: `🎉 ¡Has canjeado tu premio en el local! Te quedan ${updatedUser.points} estrellas.`,
-      data: updatedUser
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error interno' });
-  }
+  const { data: reward } = await supabase.from('rewards').select('cost').eq('id', rewardId).single();
+  if (!reward) return res.status(404).json({ message: 'Premio no disponible' });
+  const { data: user } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
+  if (!user || user.points < reward.cost) return res.status(400).json({ message: '❌ No tienes suficientes estrellas.' });
+  await supabase.from('users').update({ points: user.points - reward.cost }).eq('device_id', deviceId);
+  await supabase.from('history').insert({ device_id: deviceId, restaurant_id: restaurantId, action_type: 'redeem' });
+  const { data: updatedUser } = await supabase.from('users').select('points').eq('device_id', deviceId).single();
+  res.json({ success: true, message: `🎉 ¡Has canjeado tu premio en el local! Te quedan ${updatedUser.points} estrellas.`, data: updatedUser });
 });
 
-// --- RUTA PARA OBTENER CATÁLOGO DE PREMIOS ---
 app.get('/api/rewards', async (req, res) => {
   try {
-    // Verificar si existen premios, si no, crearlos
     const { count } = await supabase.from('rewards').select('*', { count: 'exact', head: true });
     if (count === 0) {
       await supabase.from('rewards').insert([

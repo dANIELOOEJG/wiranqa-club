@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
 
-// Lista de restaurantes con sus códigos únicos
+// Lista de restaurantes con sus códigos únicos (ACTUALIZADOS)
 const restaurants = [
-  { name: 'Restaurante La Esquina', code: 'WIRANQA-LOCAL-001' },
-  { name: 'Bar El Rincón', code: 'WIRANQA-LOCAL-002' }
+  { name: 'Restaurante La Esquina', code: 'WIRANQA-LOCAL-001-NUEVO' },
+  { name: 'Bar El Rincón', code: 'WIRANQA-LOCAL-002-NUEVO' }
 ];
 
 // Carpeta donde se guardarán las imágenes
