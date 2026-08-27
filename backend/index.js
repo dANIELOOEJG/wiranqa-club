@@ -61,7 +61,6 @@ app.post('/api/restaurant/generate-qr', async (req, res) => {
   if (!restaurantId) return res.status(400).json({ error: 'Datos incompletos' });
 
   try {
-    // Generar código único con la fecha actual
     const newCode = `WIRANQA-LOCAL-${restaurantId}-${Date.now()}`;
     
     const { error } = await supabase
@@ -95,18 +94,11 @@ app.get('/api/restaurant/stats/:restaurantId', async (req, res) => {
   }
 });
 
-// --- RUTA PARA VER CLIENTES QUE ESCANEARON EN EL RESTAURANTE ---
-app.get('/api/restaurant/clients/:restaurantId', async (req, res) => {
-  const { restaurantId } = req.params;
+// --- RUTA PARA LISTAR RESTAURANTES (PARA QUE EL CLIENTE ELIJA EL LOCAL) ---
+app.get('/api/restaurants', async (req, res) => {
   try {
-    const { data } = await supabase
-      .from('history')
-      .select('device_id, created_at')
-      .eq('restaurant_id', restaurantId)
-      .order('created_at', { ascending: false });
-
-    const uniqueClients = [...new Set(data.map(item => item.device_id))];
-    res.json(uniqueClients);
+    const { data } = await supabase.from('restaurants').select('id, name');
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -146,7 +138,7 @@ app.get('/api/user/:deviceId', async (req, res) => {
   }
 });
 
-// --- RUTA PARA ESCANEAR QR DEL LOCAL (ÚNICO E IRREPETIBLE POR CLIENTE) ---
+// --- RUTA PARA ESCANEAR QR DEL LOCAL ---
 app.post('/api/scan', async (req, res) => {
   const rawCode = req.body.code;
   const rawDeviceId = req.body.deviceId;
@@ -156,7 +148,7 @@ app.post('/api/scan', async (req, res) => {
   if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
 
   try {
-    // 1. Buscar restaurante por su QR
+    // Buscar restaurante por su QR
     const { data: restaurant, error } = await supabase
       .from('restaurants')
       .select('*')
@@ -165,7 +157,7 @@ app.post('/api/scan', async (req, res) => {
 
     if (!restaurant) return res.status(404).json({ message: '❌ Este QR ya no es válido. El local generó uno nuevo.' });
 
-    // 2. Verificar si el cliente YA escaneó este QR
+    // Verificar si el cliente YA escaneó este QR
     const { data: existingScan } = await supabase
       .from('history')
       .select('*')
@@ -176,12 +168,12 @@ app.post('/api/scan', async (req, res) => {
 
     if (existingScan) return res.status(400).json({ message: `⚠️ Ya escaneaste el QR de ${restaurant.name}. Pide el nuevo QR al local.` });
 
-    // 3. Registrar el escaneo
+    // Registrar el escaneo
     await supabase
       .from('history')
       .insert({ device_id: deviceId, restaurant_id: restaurant.id, action_type: 'scan' });
 
-    // 4. Sumar estrella al cliente
+    // Sumar estrella al cliente
     const { data: existingUser } = await supabase
       .from('users')
       .select('points')
@@ -196,7 +188,7 @@ app.post('/api/scan', async (req, res) => {
       await supabase.from('users').insert({ device_id: deviceId, points: 1, nickname: getLevel(1).defaultNickname });
     }
 
-    // 5. Devolver datos actualizados
+    // Devolver datos actualizados
     const { data: history } = await supabase
       .from('history')
       .select('*, restaurants(name)')
@@ -244,10 +236,20 @@ app.post('/api/redeem', async (req, res) => {
   }
 });
 
-// --- RUTA PARA LISTAR RESTAURANTES (PARA QUE EL CLIENTE ELIJA EL LOCAL) ---
-app.get('/api/restaurants', async (req, res) => {
+// --- RUTA PARA OBTENER CATÁLOGO DE PREMIOS ---
+app.get('/api/rewards', async (req, res) => {
   try {
-    const { data } = await supabase.from('restaurants').select('id, name');
+    // Verificar si existen premios, si no, crearlos
+    const { count } = await supabase.from('rewards').select('*', { count: 'exact', head: true });
+    if (count === 0) {
+      await supabase.from('rewards').insert([
+        { name: 'Cerveza WIRANQA', cost: 6 },
+        { name: 'Vaso Shop WIRANQA', cost: 6, description: 'Vaso de vidrio de 350ml' },
+        { name: 'Combo Amigos (4 personas)', cost: 40, description: '1 ronda gratis de vasos shop' },
+        { name: 'Combo Amigos (5+ personas)', cost: 100, description: '1 ronda gratis de vasos shop' }
+      ]);
+    }
+    const { data } = await supabase.from('rewards').select('*');
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
