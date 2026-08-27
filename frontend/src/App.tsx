@@ -21,6 +21,15 @@ function App() {
   const [userData, setUserData] = useState({ name: '', dni: '', email: '' });
   const [isRegistered, setIsRegistered] = useState(false);
 
+  // --- ESTADO PARA EL PANEL DEL RESTAURANTE ---
+  const [restaurantView, setRestaurantView] = useState(false);
+  const [restaurantLogged, setRestaurantLogged] = useState(false);
+  const [restaurantData, setRestaurantData] = useState(null);
+  const [restaurantStats, setRestaurantStats] = useState({ totalScans: 0, totalRedeems: 0, totalClients: 0 });
+  const [restaurantLogin, setRestaurantLogin] = useState({ username: '', password: '' });
+  const [newQrCode, setNewQrCode] = useState('');
+  const [showLoginError, setShowLoginError] = useState(false);
+
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
   const isProcessing = useRef(false);
@@ -226,6 +235,70 @@ function App() {
     }
   };
 
+  // --- FUNCIONES DEL PANEL DEL RESTAURANTE ---
+  const handleRestaurantLogin = async () => {
+    if (!restaurantLogin.username || !restaurantLogin.password) {
+      setShowLoginError(true);
+      return;
+    }
+    
+    try {
+      const res = await fetch('https://wiranqa-backend.onrender.com/api/restaurant/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(restaurantLogin)
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setRestaurantLogged(true);
+        setRestaurantData(data.restaurant);
+        setShowLoginError(false);
+        // Cargar estadísticas
+        await fetchRestaurantStats(data.restaurant.id);
+      } else {
+        setShowLoginError(true);
+      }
+    } catch (error) {
+      setShowLoginError(true);
+    }
+  };
+
+  const fetchRestaurantStats = async (restaurantId) => {
+    try {
+      const res = await fetch(`https://wiranqa-backend.onrender.com/api/restaurant/stats/${restaurantId}`);
+      const data = await res.json();
+      setRestaurantStats(data);
+    } catch (e) { console.error(e); }
+  };
+
+  const handleGenerateNewQR = async () => {
+    if (!restaurantData) return;
+    try {
+      const res = await fetch('https://wiranqa-backend.onrender.com/api/restaurant/generate-qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restaurantId: restaurantData.id })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNewQrCode(data.newQrCode);
+        // Actualizar el restaurantData con el nuevo QR
+        setRestaurantData({ ...restaurantData, current_qr_code: data.newQrCode });
+        // Recargar estadísticas
+        await fetchRestaurantStats(restaurantData.id);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleLogout = () => {
+    setRestaurantLogged(false);
+    setRestaurantData(null);
+    setRestaurantStats({ totalScans: 0, totalRedeems: 0, totalClients: 0 });
+    setNewQrCode('');
+    setRestaurantLogin({ username: '', password: '' });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 border border-amber-200 relative overflow-hidden">
@@ -250,131 +323,243 @@ function App() {
             </h2>
           </div>
 
-          <div className="flex justify-center gap-4 mb-4 flex-wrap">
-            <button onClick={() => setView('home')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'home' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>🏠 Inicio</button>
-            <button onClick={() => setView('catalog')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'catalog' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>🎁 Premios</button>
-            <button onClick={() => setView('profile')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'profile' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>👤 Perfil</button>
-          </div>
-
-          {view === 'home' && (
+          {/* Si está en vista normal (cliente) */}
+          {!restaurantView && (
             <>
-              <div className="flex items-center justify-center gap-2 mb-1">
-                <span className="text-4xl">⭐</span>
-                <span className="text-5xl font-extrabold text-slate-800">{points}</span>
+              <div className="flex justify-center gap-4 mb-4 flex-wrap">
+                <button onClick={() => setView('home')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'home' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>🏠 Inicio</button>
+                <button onClick={() => setView('catalog')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'catalog' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>🎁 Premios</button>
+                <button onClick={() => setView('profile')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'profile' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>👤 Perfil</button>
               </div>
-              <div className="text-sm font-bold uppercase tracking-wider text-amber-600">{level.title}</div>
-              <div className="mt-4">
-                {scanning ? (
-                  <div className="rounded-xl overflow-hidden border-2 border-amber-600 bg-black relative">
-                    <QrReader delay={300} onError={console.error} onScan={handleScan} style={{ width: '100%', height: '250px', objectFit: 'cover' }} constraints={{ video: { facingMode: cameraMode } }} />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-44 h-44 border-2 border-amber-500 rounded-xl opacity-80"></div></div>
-                    <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">Cancelar</button>
+
+              {view === 'home' && (
+                <>
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <span className="text-4xl">⭐</span>
+                    <span className="text-5xl font-extrabold text-slate-800">{points}</span>
                   </div>
-                ) : (
-                  <button onClick={() => setScanning(true)} disabled={loading || backendStatus !== 'Online'} className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
-                    {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
-                  </button>
-                )}
+                  <div className="text-sm font-bold uppercase tracking-wider text-amber-600">{level.title}</div>
+                  <div className="mt-4">
+                    {scanning ? (
+                      <div className="rounded-xl overflow-hidden border-2 border-amber-600 bg-black relative">
+                        <QrReader delay={300} onError={console.error} onScan={handleScan} style={{ width: '100%', height: '250px', objectFit: 'cover' }} constraints={{ video: { facingMode: cameraMode } }} />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-44 h-44 border-2 border-amber-500 rounded-xl opacity-80"></div></div>
+                        <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">Cancelar</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setScanning(true)} disabled={loading || backendStatus !== 'Online'} className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
+                        {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {view === 'catalog' && (
+                <div className="mt-4">
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">🎁 Catálogo de Premios</h3>
+                  <p className="text-sm text-slate-500 mb-4">Tienes ⭐ {points} estrellas</p>
+                  
+                  {/* Selección de restaurante */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Elige el local para canjear:</label>
+                    <select 
+                      value={selectedRestaurant || ''} 
+                      onChange={(e) => setSelectedRestaurant(Number(e.target.value))}
+                      className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="">-- Selecciona un local --</option>
+                      {restaurants.map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-3">
+                    {rewards.length === 0 ? <p className="text-sm text-slate-400">Cargando premios...</p> : (
+                      rewards.map((reward) => (
+                        <div key={reward.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
+                          <div className="text-left">
+                            <h4 className="font-bold text-slate-800">{reward.name}</h4>
+                            <p className="text-sm text-slate-500">Costo: ⭐ {reward.cost}</p>
+                            {reward.description && <p className="text-xs text-amber-600">{reward.description}</p>}
+                          </div>
+                          <button onClick={() => handleRedeem(reward.id, reward.cost)} disabled={loading || points < reward.cost} className={`px-4 py-2 rounded-lg font-bold text-sm transition ${points >= reward.cost ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}>
+                            {points >= reward.cost ? 'Canjear' : 'Faltan ⭐'}
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {view === 'profile' && (
+                <div className="mt-4 text-left">
+                  <h3 className="text-lg font-bold text-slate-800 text-center mb-4">👤 Mi Perfil</h3>
+                  
+                  <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Apodo</label>
+                    {isEditingNickname ? (
+                      <div className="flex gap-2">
+                        <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} className="flex-1 p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500" maxLength={20} />
+                        <button onClick={updateNickname} className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Guardar</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-bold text-slate-800">{nickname}</span>
+                        <span className="text-sm text-slate-500 ml-2">- Nivel {level.id}</span>
+                        <button onClick={() => setIsEditingNickname(true)} className="text-sm text-amber-600 hover:text-amber-700 underline">Editar</button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Nivel</label>
+                    <div className="flex items-center gap-2"><span className="text-2xl">{level.emoji}</span><span className="text-lg font-bold text-slate-800">{level.title}</span></div>
+                    <p className="text-xs text-slate-500 mt-1">Nivel {level.id} de 5</p>
+                    <p className="text-xs text-amber-600 mt-1">{level.desc}</p>
+                  </div>
+
+                  <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Estrellas</label>
+                    <div className="flex items-center gap-2"><span className="text-3xl">⭐</span><span className="text-3xl font-bold text-slate-800">{points}</span></div>
+                  </div>
+
+                  <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="block text-sm font-bold text-slate-700">📊 Mis Consumos</label>
+                    </div>
+                    <div className="text-sm text-slate-600">
+                      {history.length === 0 ? <p className="text-slate-400">Aún sin consumos.</p> : (
+                        history.map((item, idx) => (
+                          <div key={idx} className="flex justify-between border-b border-slate-100 py-1">
+                            <span>{item.restaurants ? item.restaurants.name : 'Local'}</span>
+                            <span className="text-xs text-slate-400">{item.action_type === 'scan' ? '🍺 Consumo' : '🎁 Canje'}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Cuenta</label>
+                    {isRegistered ? <p className="text-green-600 font-medium">✅ Verificada</p> : (
+                      <div>
+                        <p className="text-amber-600 font-medium mb-2">⚠️ Registro necesario para canjear.</p>
+                        <button onClick={() => setShowRegisterForm(true)} className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 text-sm">Registrarse</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Botón para ir al panel del restaurante */}
+              <div className="mt-4">
+                <button 
+                  onClick={() => setRestaurantView(true)}
+                  className="w-full py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-bold"
+                >
+                  🏪 Entrar como Restaurante
+                </button>
               </div>
             </>
           )}
 
-          {view === 'catalog' && (
+          {/* VISTA DEL RESTAURANTE */}
+          {restaurantView && (
             <div className="mt-4">
-              <h3 className="text-lg font-bold text-slate-800 mb-2">🎁 Catálogo de Premios</h3>
-              <p className="text-sm text-slate-500 mb-4">Tienes ⭐ {points} estrellas</p>
-              
-              {/* Selección de restaurante */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-slate-700 mb-2">Elige el local para canjear:</label>
-                <select 
-                  value={selectedRestaurant || ''} 
-                  onChange={(e) => setSelectedRestaurant(Number(e.target.value))}
-                  className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500"
-                >
-                  <option value="">-- Selecciona un local --</option>
-                  {restaurants.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-3">
-                {rewards.length === 0 ? <p className="text-sm text-slate-400">Cargando premios...</p> : (
-                  rewards.map((reward) => (
-                    <div key={reward.id} className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
-                      <div className="text-left">
-                        <h4 className="font-bold text-slate-800">{reward.name}</h4>
-                        <p className="text-sm text-slate-500">Costo: ⭐ {reward.cost}</p>
-                        {reward.description && <p className="text-xs text-amber-600">{reward.description}</p>}
-                      </div>
-                      <button onClick={() => handleRedeem(reward.id, reward.cost)} disabled={loading || points < reward.cost} className={`px-4 py-2 rounded-lg font-bold text-sm transition ${points >= reward.cost ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}>
-                        {points >= reward.cost ? 'Canjear' : 'Faltan ⭐'}
-                      </button>
+              {!restaurantLogged ? (
+                <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 text-center">
+                  <h3 className="text-xl font-bold text-slate-800 mb-4">🏪 Login Restaurante</h3>
+                  
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Usuario</label>
+                      <input 
+                        type="text" 
+                        value={restaurantLogin.username} 
+                        onChange={(e) => setRestaurantLogin({...restaurantLogin, username: e.target.value})}
+                        className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500"
+                        placeholder="Ej: laesquina"
+                      />
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {view === 'profile' && (
-            <div className="mt-4 text-left">
-              <h3 className="text-lg font-bold text-slate-800 text-center mb-4">👤 Mi Perfil</h3>
-              
-              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <label className="block text-sm font-bold text-slate-700 mb-1">Apodo</label>
-                {isEditingNickname ? (
-                  <div className="flex gap-2">
-                    <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} className="flex-1 p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500" maxLength={20} />
-                    <button onClick={updateNickname} className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Guardar</button>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">Contraseña</label>
+                      <input 
+                        type="password" 
+                        value={restaurantLogin.password} 
+                        onChange={(e) => setRestaurantLogin({...restaurantLogin, password: e.target.value})}
+                        className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500"
+                        placeholder="••••••"
+                      />
+                    </div>
+                    
+                    {showLoginError && (
+                      <p className="text-red-600 text-sm font-medium">❌ Usuario o contraseña incorrectos</p>
+                    )}
+                    
+                    <button 
+                      onClick={handleRestaurantLogin}
+                      className="w-full py-3 bg-amber-600 text-white font-bold rounded hover:bg-amber-700"
+                    >
+                      Iniciar Sesión
+                    </button>
+                    <button 
+                      onClick={() => setRestaurantView(false)}
+                      className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm"
+                    >
+                      ← Volver a la app
+                    </button>
                   </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-slate-800">{nickname}</span>
-                    <span className="text-sm text-slate-500 ml-2">- Nivel {level.id}</span>
-                    <button onClick={() => setIsEditingNickname(true)} className="text-sm text-amber-600 hover:text-amber-700 underline">Editar</button>
-                  </div>
-                )}
-              </div>
-
-              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <label className="block text-sm font-bold text-slate-700 mb-1">Nivel</label>
-                <div className="flex items-center gap-2"><span className="text-2xl">{level.emoji}</span><span className="text-lg font-bold text-slate-800">{level.title}</span></div>
-                <p className="text-xs text-slate-500 mt-1">Nivel {level.id} de 5</p>
-                <p className="text-xs text-amber-600 mt-1">{level.desc}</p>
-              </div>
-
-              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <label className="block text-sm font-bold text-slate-700 mb-1">Estrellas</label>
-                <div className="flex items-center gap-2"><span className="text-3xl">⭐</span><span className="text-3xl font-bold text-slate-800">{points}</span></div>
-              </div>
-
-              <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <div className="flex justify-between items-center mb-2">
-                  <label className="block text-sm font-bold text-slate-700">📊 Mis Consumos</label>
                 </div>
-                <div className="text-sm text-slate-600">
-                  {history.length === 0 ? <p className="text-slate-400">Aún sin consumos.</p> : (
-                    history.map((item, idx) => (
-                      <div key={idx} className="flex justify-between border-b border-slate-100 py-1">
-                        <span>{item.restaurants ? item.restaurants.name : 'Local'}</span>
-                        <span className="text-xs text-slate-400">{item.action_type === 'scan' ? '🍺 Consumo' : '🎁 Canje'}</span>
+              ) : (
+                <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 text-center">
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">🏪 Panel de {restaurantData.name}</h3>
+                  <p className="text-sm text-slate-500 mb-4">Admin del Restaurante</p>
+
+                  {/* Estadísticas */}
+                  <div className="grid grid-cols-3 gap-3 mb-6">
+                    <div className="bg-white p-3 rounded-lg border border-slate-200">
+                      <p className="text-xs text-slate-500">🍺 Consumos</p>
+                      <p className="text-2xl font-bold text-slate-800">{restaurantStats.totalScans}</p>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg border border-slate-200">
+                      <p className="text-xs text-slate-500">🎁 Canjes</p>
+                      <p className="text-2xl font-bold text-slate-800">{restaurantStats.totalRedeems}</p>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg border border-slate-200">
+                      <p className="text-xs text-slate-500">👥 Clientes</p>
+                      <p className="text-2xl font-bold text-slate-800">{restaurantStats.totalClients}</p>
+                    </div>
+                  </div>
+
+                  {/* Gestión del QR */}
+                  <div className="bg-white p-4 rounded-lg border border-slate-200 mb-6">
+                    <p className="text-sm font-bold text-slate-700 mb-2">📱 Código QR Actual</p>
+                    <p className="text-xs font-mono text-slate-500 mb-4 break-all">{restaurantData.current_qr_code}</p>
+                    <button 
+                      onClick={handleGenerateNewQR}
+                      className="w-full py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700 text-sm"
+                    >
+                      🔄 Generar Nuevo QR Único
+                    </button>
+                    {newQrCode && (
+                      <div className="mt-4 bg-emerald-50 p-3 rounded-lg border border-emerald-200">
+                        <p className="text-sm font-bold text-emerald-700 mb-1">✅ Nuevo QR Generado:</p>
+                        <p className="text-xs font-mono text-emerald-700 break-all">{newQrCode}</p>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                <label className="block text-sm font-bold text-slate-700 mb-1">Cuenta</label>
-                {isRegistered ? <p className="text-green-600 font-medium">✅ Verificada</p> : (
-                  <div>
-                    <p className="text-amber-600 font-medium mb-2">⚠️ Registro necesario para canjear.</p>
-                    <button onClick={() => setShowRegisterForm(true)} className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 text-sm">Registrarse</button>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm"
+                  >
+                    ← Cerrar Sesión
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
