@@ -28,6 +28,7 @@ function App() {
   const [restaurantStats, setRestaurantStats] = useState({ totalScans: 0, totalRedeems: 0, totalClients: 0 });
   const [restaurantLogin, setRestaurantLogin] = useState({ username: '', password: '' });
   const [newQrCode, setNewQrCode] = useState('');
+  const [newQrImage, setNewQrImage] = useState(null); // 🔥 Nueva imagen del QR
   const [showLoginError, setShowLoginError] = useState(false);
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -281,10 +282,20 @@ function App() {
       const data = await res.json();
       if (data.success) {
         setNewQrCode(data.newQrCode);
+        setNewQrImage(data.newQrImage); // 🔥 Guardamos la imagen
         setRestaurantData({ ...restaurantData, current_qr_code: data.newQrCode });
         await fetchRestaurantStats(restaurantData.id);
       }
     } catch (e) { console.error(e); }
+  };
+
+  // 🔥 Función para descargar la imagen
+  const downloadQR = () => {
+    if (!newQrImage) return;
+    const link = document.createElement('a');
+    link.href = newQrImage;
+    link.download = `QR_${restaurantData.name}.png`;
+    link.click();
   };
 
   const handleLogout = () => {
@@ -292,6 +303,7 @@ function App() {
     setRestaurantData(null);
     setRestaurantStats({ totalScans: 0, totalRedeems: 0, totalClients: 0 });
     setNewQrCode('');
+    setNewQrImage(null); // Limpiamos la imagen
     setRestaurantLogin({ username: '', password: '' });
   };
 
@@ -440,7 +452,7 @@ function App() {
                 </div>
               )}
 
-              {/* Botón para ir al panel del restaurante (Colocado en la parte inferior de la pantalla) */}
+              {/* Botón para ir al panel del restaurante */}
               <div className="mt-6 pt-4 border-t border-slate-200">
                 <button 
                   onClick={() => setRestaurantView(true)}
@@ -523,22 +535,31 @@ function App() {
                    {/* Gestión del QR */}
                   <div className="bg-white p-4 rounded-lg border border-slate-200 mb-6">
                     <p className="text-sm font-bold text-slate-700 mb-2">📱 Código QR Actual</p>
-                    {/* Ocultamos el texto técnico y mostramos el botón */}
+                    {/* Mostramos la imagen si existe */}
                     <div className="mt-4 bg-emerald-50 p-3 rounded-lg border border-emerald-200 text-center">
-                      <p className="text-xs text-emerald-700 mb-1">
-                        El código actual es válido. Si lo deseas, puedes generar uno nuevo.
-                      </p>
+                      {newQrImage ? (
+                        <div>
+                          <p className="text-sm font-bold text-emerald-700 mb-2">✅ Nuevo QR Generado:</p>
+                          <img src={newQrImage} alt="Nuevo QR" className="mx-auto w-40 h-40" />
+                          <button 
+                            onClick={downloadQR}
+                            className="mt-3 px-4 py-2 bg-amber-600 text-white font-bold rounded hover:bg-amber-700 text-xs"
+                          >
+                            📥 Descargar QR
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-emerald-700 mb-1">
+                          El código actual es válido. Si lo deseas, puedes generar uno nuevo.
+                        </p>
+                      )}
+                      
                       <button 
                         onClick={handleGenerateNewQR}
                         className="w-full py-3 bg-green-600 text-white font-bold rounded hover:bg-green-700 text-sm mt-2"
                       >
                         🔄 Generar Nuevo QR Único
                       </button>
-                      {newQrCode && (
-                        <p className="text-xs font-mono text-emerald-700 break-all mt-2">
-                          ✅ Nuevo código generado: {newQrCode}
-                        </p>
-                      )}
                     </div>
                   </div>
 
@@ -553,7 +574,7 @@ function App() {
             </div>
           )}
 
-          {/* Formulario de registro (Aparece solo cuando el usuario intenta canjear sin registrarse) */}
+          {/* Formulario de registro */}
           {showRegisterForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
