@@ -128,7 +128,6 @@ function App() {
       const data = await res.json();
       setLoading(false);
       
-      // Si la respuesta NO es exitosa, mostramos el mensaje real del servidor
       if (res.ok && data.success) {
         setPoints(data.data.points);
         setLevel(data.data.level);
@@ -254,7 +253,6 @@ function App() {
         setRestaurantLogged(true);
         setRestaurantData(data.restaurant);
         setShowLoginError(false);
-        // Cargar estadísticas
         await fetchRestaurantStats(data.restaurant.id);
       } else {
         setShowLoginError(true);
@@ -283,9 +281,7 @@ function App() {
       const data = await res.json();
       if (data.success) {
         setNewQrCode(data.newQrCode);
-        // Actualizar el restaurantData con el nuevo QR
         setRestaurantData({ ...restaurantData, current_qr_code: data.newQrCode });
-        // Recargar estadísticas
         await fetchRestaurantStats(restaurantData.id);
       }
     } catch (e) { console.error(e); }
@@ -441,21 +437,11 @@ function App() {
                       )}
                     </div>
                   </div>
-
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <label className="block text-sm font-bold text-slate-700 mb-1">Cuenta</label>
-                    {isRegistered ? <p className="text-green-600 font-medium">✅ Verificada</p> : (
-                      <div>
-                        <p className="text-amber-600 font-medium mb-2">⚠️ Registro necesario para canjear.</p>
-                        <button onClick={() => setShowRegisterForm(true)} className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 text-sm">Registrarse</button>
-                      </div>
-                    )}
-                  </div>
                 </div>
               )}
 
-              {/* Botón para ir al panel del restaurante */}
-              <div className="mt-4">
+              {/* Botón para ir al panel del restaurante (Colocado en la parte inferior de la pantalla) */}
+              <div className="mt-6 pt-4 border-t border-slate-200">
                 <button 
                   onClick={() => setRestaurantView(true)}
                   className="w-full py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-bold"
@@ -563,10 +549,11 @@ function App() {
             </div>
           )}
 
+          {/* Formulario de registro (Aparece solo cuando el usuario intenta canjear sin registrarse) */}
           {showRegisterForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-                <h3 className="text-xl font-bold text-slate-800 mb-4">📝 Registro</h3>
+                <h3 className="text-xl font-bold text-slate-800 mb-4">📝 Registro para canjear</h3>
                 <div className="space-y-3">
                   <div><label className="block text-sm font-bold text-slate-700 mb-1">Nombre</label><input type="text" value={userData.name} onChange={(e) => setUserData({...userData, name: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500" placeholder="Nombre completo" /></div>
                   <div><label className="block text-sm font-bold text-slate-700 mb-1">DNI</label><input type="text" value={userData.dni} onChange={(e) => setUserData({...userData, dni: e.target.value})} className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500" placeholder="DNI" /></div>
