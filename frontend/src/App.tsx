@@ -3,6 +3,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import QrReader from 'react-qr-scanner';
 
 function App() {
+  // 🚀 CONFIGURACIÓN GLOBAL (Usa la variable de Vercel)
+  const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com';
+
   const [points, setPoints] = useState(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -28,7 +31,7 @@ function App() {
   const [restaurantStats, setRestaurantStats] = useState({ totalScans: 0, totalRedeems: 0, totalClients: 0 });
   const [restaurantLogin, setRestaurantLogin] = useState({ username: '', password: '' });
   const [newQrCode, setNewQrCode] = useState('');
-  const [newQrImage, setNewQrImage] = useState(null); // 🔥 Nueva imagen del QR
+  const [newQrImage, setNewQrImage] = useState(null);
   const [showLoginError, setShowLoginError] = useState(false);
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -47,7 +50,7 @@ function App() {
   // 🚀 KEEP ALIVE (Carga rápida)
   useEffect(() => {
     const keepAlive = async () => {
-      try { await fetch('https://wiranqa-backend.onrender.com/health'); } catch (e) {}
+      try { await fetch(`${API_URL}/health`); } catch (e) {}
     };
     keepAlive();
     const interval = setInterval(keepAlive, 60000);
@@ -65,7 +68,7 @@ function App() {
 
   const checkBackend = async (id) => {
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/health');
+      const res = await fetch(`${API_URL}/health`);
       if (res.ok) {
         setBackendStatus('Online');
         fetchUserData(id);
@@ -77,7 +80,7 @@ function App() {
 
   const fetchUserData = async (id) => {
     try {
-      const res = await fetch(`https://wiranqa-backend.onrender.com/api/user/${id}`);
+      const res = await fetch(`${API_URL}/api/user/${id}`);
       const data = await res.json();
       if (data.points !== undefined) {
         setPoints(data.points);
@@ -91,7 +94,7 @@ function App() {
 
   const fetchRewards = async () => {
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/api/rewards');
+      const res = await fetch(`${API_URL}/api/rewards`);
       const data = await res.json();
       setRewards(data);
     } catch (e) { console.error(e); }
@@ -99,7 +102,7 @@ function App() {
 
   const fetchRestaurants = async () => {
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/api/restaurants');
+      const res = await fetch(`${API_URL}/api/restaurants`);
       const data = await res.json();
       setRestaurants(data);
     } catch (e) { console.error(e); }
@@ -121,7 +124,7 @@ function App() {
     setMessage('⏳ Verificando tu WIRANQA...');
     const cleanCode = code.trim();
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/api/scan', {
+      const res = await fetch(`${API_URL}/api/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: cleanCode, deviceId: id })
@@ -159,7 +162,7 @@ function App() {
     if (!nickname.trim()) return;
     setIsEditingNickname(false);
     try {
-      await fetch('https://wiranqa-backend.onrender.com/api/user/update', {
+      await fetch(`${API_URL}/api/user/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId, nickname: nickname.trim() })
@@ -175,7 +178,7 @@ function App() {
       return;
     }
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/api/user/register', {
+      const res = await fetch(`${API_URL}/api/user/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId, name, dni, email })
@@ -206,7 +209,6 @@ function App() {
       setTimeout(() => setMessage(''), 4000);
       return;
     }
-    // El cliente debe elegir el local
     if (!selectedRestaurant) {
       setMessage('❌ Primero debes elegir en qué local quieres canjear.');
       setTimeout(() => setMessage(''), 4000);
@@ -215,7 +217,7 @@ function App() {
     
     setLoading(true);
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/api/redeem', {
+      const res = await fetch(`${API_URL}/api/redeem`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId, rewardId, restaurantId: selectedRestaurant })
@@ -243,7 +245,7 @@ function App() {
     }
     
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/api/restaurant/login', {
+      const res = await fetch(`${API_URL}/api/restaurant/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(restaurantLogin)
@@ -265,7 +267,7 @@ function App() {
 
   const fetchRestaurantStats = async (restaurantId) => {
     try {
-      const res = await fetch(`https://wiranqa-backend.onrender.com/api/restaurant/stats/${restaurantId}`);
+      const res = await fetch(`${API_URL}/api/restaurant/stats/${restaurantId}`);
       const data = await res.json();
       setRestaurantStats(data);
     } catch (e) { console.error(e); }
@@ -274,7 +276,7 @@ function App() {
   const handleGenerateNewQR = async () => {
     if (!restaurantData) return;
     try {
-      const res = await fetch('https://wiranqa-backend.onrender.com/api/restaurant/generate-qr', {
+      const res = await fetch(`${API_URL}/api/restaurant/generate-qr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ restaurantId: restaurantData.id })
@@ -282,14 +284,13 @@ function App() {
       const data = await res.json();
       if (data.success) {
         setNewQrCode(data.newQrCode);
-        setNewQrImage(data.newQrImage); // 🔥 Guardamos la imagen
+        setNewQrImage(data.newQrImage);
         setRestaurantData({ ...restaurantData, current_qr_code: data.newQrCode });
         await fetchRestaurantStats(restaurantData.id);
       }
     } catch (e) { console.error(e); }
   };
 
-  // 🔥 Función para descargar la imagen
   const downloadQR = () => {
     if (!newQrImage) return;
     const link = document.createElement('a');
@@ -303,7 +304,7 @@ function App() {
     setRestaurantData(null);
     setRestaurantStats({ totalScans: 0, totalRedeems: 0, totalClients: 0 });
     setNewQrCode('');
-    setNewQrImage(null); // Limpiamos la imagen
+    setNewQrImage(null);
     setRestaurantLogin({ username: '', password: '' });
   };
 
@@ -331,7 +332,6 @@ function App() {
             </h2>
           </div>
 
-          {/* Si está en vista normal (cliente) */}
           {!restaurantView && (
             <>
               <div className="flex justify-center gap-4 mb-4 flex-wrap">
@@ -368,7 +368,6 @@ function App() {
                   <h3 className="text-lg font-bold text-slate-800 mb-2">🎁 Catálogo de Premios</h3>
                   <p className="text-sm text-slate-500 mb-4">Tienes ⭐ {points} estrellas</p>
                   
-                  {/* Selección de restaurante */}
                   <div className="mb-4">
                     <label className="block text-sm font-bold text-slate-700 mb-2">Elige el local para canjear:</label>
                     <select 
@@ -452,7 +451,6 @@ function App() {
                 </div>
               )}
 
-              {/* Botón para ir al panel del restaurante */}
               <div className="mt-6 pt-4 border-t border-slate-200">
                 <button 
                   onClick={() => setRestaurantView(true)}
@@ -464,7 +462,6 @@ function App() {
             </>
           )}
 
-          {/* VISTA DEL RESTAURANTE */}
           {restaurantView && (
             <div className="mt-4">
               {!restaurantLogged ? (
@@ -516,7 +513,6 @@ function App() {
                   <h3 className="text-xl font-bold text-slate-800 mb-2">🏪 Panel de {restaurantData.name}</h3>
                   <p className="text-sm text-slate-500 mb-4">Admin del Restaurante</p>
 
-                  {/* Estadísticas */}
                   <div className="grid grid-cols-3 gap-3 mb-6">
                     <div className="bg-white p-3 rounded-lg border border-slate-200">
                       <p className="text-xs text-slate-500">🍺 Consumos</p>
@@ -532,10 +528,8 @@ function App() {
                     </div>
                   </div>
 
-                   {/* Gestión del QR */}
-                  <div className="bg-white p-4 rounded-lg border border-slate-200 mb-6">
+                   <div className="bg-white p-4 rounded-lg border border-slate-200 mb-6">
                     <p className="text-sm font-bold text-slate-700 mb-2">📱 Código QR Actual</p>
-                    {/* Mostramos la imagen si existe */}
                     <div className="mt-4 bg-emerald-50 p-3 rounded-lg border border-emerald-200 text-center">
                       {newQrImage ? (
                         <div>
@@ -574,7 +568,6 @@ function App() {
             </div>
           )}
 
-          {/* Formulario de registro */}
           {showRegisterForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
               <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
