@@ -24,7 +24,7 @@ function App() {
   // --- VISTA Y ADMIN ---
   const [view, setView] = useState('home');
   const [currentQRCode, setCurrentQRCode] = useState('');
-  const [qrImage, setQrImage] = useState(''); // 🔥 NUEVO ESTADO
+  const [qrImage, setQrImage] = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminLogged, setIsAdminLogged] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -202,11 +202,15 @@ function App() {
     }
   };
 
+  // ✅ CORREGIDO: Ahora guarda el código Y la imagen
   const fetchCurrentQR = async () => {
     try {
       const res = await fetch(`${API_URL}/api/admin/current-qr`);
       const data = await res.json();
-      if (data.code) setCurrentQRCode(data.code);
+      if (data.code) {
+        setCurrentQRCode(data.code);
+        setQrImage(data.qrImage); // 🔥 IMAGEN GUARDADA
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -214,14 +218,14 @@ function App() {
     if (adminPassword === ADMIN_PASSWORD) {
       setIsAdminLogged(true);
       setShowAdminLogin(false);
-      await fetchCurrentQR();
+      await fetchCurrentQR(); // Al entrar, carga el QR
     } else {
       setMessage('❌ Contraseña incorrecta.');
       setTimeout(() => setMessage(''), 4000);
     }
   };
 
-  // 🔥 ACTUALIZADO: Genera QR y guarda la imagen del backend
+  // ✅ CORREGIDO: Genera QR y muestra la imagen al instante
   const handleGenerateNewQR = async () => {
     try {
       const res = await fetch(`${API_URL}/api/admin/generate-new-qr`, {
@@ -231,7 +235,7 @@ function App() {
       const data = await res.json();
       if (data.success) {
         setCurrentQRCode(data.newCode);
-        setQrImage(data.qrImage);
+        setQrImage(data.qrImage); // 🔥 IMAGEN NUEVA
         setMessage('✅ Nuevo QR generado. El anterior ya no funciona.');
         setTimeout(() => setMessage(''), 4000);
       }
@@ -379,7 +383,7 @@ function App() {
                   ))}
                 </div>
 
-                {/* 🔥 MOSTRAR QR CON IMAGEN */}
+                {/* ✅ MOSTRAR QR CON IMAGEN */}
                 {qrImage && (
                   <div className="bg-white p-4 rounded-xl shadow-inner mb-4">
                     <p className="text-xs text-slate-500 mb-2">📱 QR Vigente (Muestra este QR al cliente)</p>
