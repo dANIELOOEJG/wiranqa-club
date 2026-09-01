@@ -3,9 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import QrReader from 'react-qr-scanner';
 
 function App() {
-  // 🚀 CONFIGURACIÓN GLOBAL
   const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com';
-  const ADMIN_PASSWORD = 'wiranqa2026'; // Contraseña del Panel Admin
+  const ADMIN_PASSWORD = 'wiranqa2026';
 
   const [points, setPoints] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -14,28 +13,20 @@ function App() {
   const [scanning, setScanning] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [nickname, setNickname] = useState('Viajero WIRANQA');
-  const [isEditingNickname, setIsEditingNickname] = useState(false);
-  const [showRegisterForm, setShowRegisterForm] = useState(false);
-  const [userData, setUserData] = useState({ name: '', dni: '', phone: '', email: '' });
   const [isRegistered, setIsRegistered] = useState(false);
   const [activeCard, setActiveCard] = useState(null);
   const [totalCompletedCards, setTotalCompletedCards] = useState(0);
   const [rewards, setRewards] = useState([]);
+  
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [userData, setUserData] = useState({ name: '', dni: '', phone: '', email: '' });
 
-  // Estados del Admin
+  // --- VISTA Y ADMIN ---
   const [view, setView] = useState('home');
+  const [currentQRCode, setCurrentQRCode] = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminLogged, setIsAdminLogged] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
-  const [adminStats, setAdminStats] = useState({
-    availableQrs: 0,
-    usedQrs: 0,
-    completedCards: 0,
-    totalUsers: 0,
-    qrs: [],
-    cards: [],
-    history: []
-  });
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const cameraMode = isMobile ? 'environment' : 'user';
@@ -50,7 +41,7 @@ function App() {
     return id;
   };
 
-  // 🚀 KEEP ALIVE (Carga rápida)
+  // KEEP ALIVE
   useEffect(() => {
     const keepAlive = async () => {
       try { await fetch(`${API_URL}/health`); } catch (e) {}
@@ -65,6 +56,7 @@ function App() {
     setDeviceId(id);
     checkBackend(id);
     fetchRewards();
+    handleAutoScanFromURL(id);
   }, []);
 
   const checkBackend = async (id) => {
@@ -101,6 +93,7 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  // DETECCIÓN AUTOMÁTICA DEL QR DESDE EL CELULAR
   const handleAutoScanFromURL = async (id) => {
     const params = new URLSearchParams(window.location.search);
     const qrCode = params.get('code');
@@ -115,16 +108,14 @@ function App() {
     isProcessing.current = true;
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
-    const cleanCode = code.trim();
     try {
       const res = await fetch(`${API_URL}/api/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: cleanCode, deviceId: id })
+        body: JSON.stringify({ code: code.trim(), deviceId: id })
       });
       const data = await res.json();
       setLoading(false);
-      
       if (data.success) {
         setActiveCard(data.data.card);
         setPoints(data.data.card.current_progress);
@@ -147,47 +138,6 @@ function App() {
   const handleScan = (data) => {
     if (data && data.text && deviceId && !isProcessing.current) {
       processScan(data.text, deviceId);
-    }
-  };
-
-  const updateNickname = async () => {
-    if (!nickname.trim()) return;
-    setIsEditingNickname(false);
-    try {
-      await fetch(`${API_URL}/api/user/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId, nickname: nickname.trim() })
-      });
-    } catch (e) { console.error(e); }
-  };
-
-  const handleRegister = async () => {
-    const { name, dni, phone, email } = userData;
-    if (!name || !dni || !phone || !email) {
-      setMessage('❌ Todos los campos son obligatorios.');
-      setTimeout(() => setMessage(''), 4000);
-      return;
-    }
-    try {
-      const res = await fetch(`${API_URL}/api/user/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId, name, dni, phone, email })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setIsRegistered(true);
-        setShowRegisterForm(false);
-        setMessage('✅ Registro completado.');
-        setTimeout(() => setMessage(''), 4000);
-      } else {
-        setMessage(data.error || '❌ Error al registrar.');
-        setTimeout(() => setMessage(''), 4000);
-      }
-    } catch (e) {
-      setMessage('❌ Error de conexión.');
-      setTimeout(() => setMessage(''), 4000);
     }
   };
 
@@ -222,43 +172,68 @@ function App() {
     }
   };
 
-  // --- FUNCIONES DEL ADMIN ---
+  const handleRegister = async () => {
+    const { name, dni, phone, email } = userData;
+    if (!name || !dni || !phone || !email) {
+      setMessage('❌ Todos los campos son obligatorios.');
+      setTimeout(() => setMessage(''), 4000);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/user/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId, name, dni, phone, email })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsRegistered(true);
+        setShowRegisterForm(false);
+        setMessage('✅ Registro completado.');
+        setTimeout(() => setMessage(''), 4000);
+      } else {
+        setMessage(data.error || '❌ Error al registrar.');
+        setTimeout(() => setMessage(''), 4000);
+      }
+    } catch (e) {
+      setMessage('❌ Error de conexión.');
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
+  const fetchCurrentQR = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/current-qr`);
+      const data = await res.json();
+      if (data.code) setCurrentQRCode(data.code);
+    } catch (e) { console.error(e); }
+  };
+
   const handleAdminLogin = async () => {
     if (adminPassword === ADMIN_PASSWORD) {
       setIsAdminLogged(true);
       setShowAdminLogin(false);
-      await fetchAdminData();
+      await fetchCurrentQR();
     } else {
       setMessage('❌ Contraseña incorrecta.');
       setTimeout(() => setMessage(''), 4000);
     }
   };
 
-  const fetchAdminData = async () => {
+  const handleGenerateNewQR = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/dashboard`);
-      const data = await res.json();
-      setAdminStats(data);
-    } catch (e) { console.error(e); }
-  };
-
-  const handleGenerateQr = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/admin/generate-qrs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity: 5 })
+      const res = await fetch(`${API_URL}/api/admin/generate-new-qr`, {
+        method: 'POST'
       });
       const data = await res.json();
       if (data.success) {
-        setMessage('✅ 5 QRs generados.');
+        setCurrentQRCode(data.newCode);
+        setMessage('✅ Nuevo QR generado. El anterior ya no funciona.');
         setTimeout(() => setMessage(''), 4000);
-        await fetchAdminData();
       }
     } catch (e) { console.error(e); }
   };
 
-  // --- RENDER DE INTERFAZ ---
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 border border-amber-200 relative overflow-hidden">
@@ -285,8 +260,7 @@ function App() {
 
               {view === 'home' && (
                 <>
-                  {/* TARJETA WIRANQA PREMIUM */}
-                  <div className="bg-gradient-to-br from-amber-100 to-amber-50 rounded-3xl p-6 border-2 border-amber-300 mb-6 shadow-lg relative overflow-hidden">
+                  <div className="bg-gradient-to-br from-amber-100 to-amber-50 rounded-3xl p-6 border-2 border-amber-300 mb-6 shadow-lg">
                     <div className="flex justify-between items-center mb-4">
                       <div className="flex items-center gap-2">
                         <img src="/logo.png" alt="WIRANQA" className="h-10 object-contain" />
@@ -297,7 +271,6 @@ function App() {
                       </span>
                     </div>
 
-                    {/* ICONOS DE CERVEZA */}
                     <div className="grid grid-cols-4 gap-2 justify-items-center mb-4">
                       {Array.from({ length: 8 }).map((_, index) => (
                         <div key={index} className={`w-10 h-10 flex items-center justify-center rounded-full border-2 ${activeCard && index < activeCard.current_progress ? 'bg-amber-500 border-amber-600' : 'bg-white border-gray-300'}`}>
@@ -306,12 +279,8 @@ function App() {
                       ))}
                     </div>
 
-                    {/* BOTÓN CANJE */}
                     {activeCard && activeCard.is_completed ? (
-                      <button 
-                        onClick={() => setView('rewards')}
-                        className="w-full py-4 bg-green-600 hover:bg-green-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all animate-pulse"
-                      >
+                      <button onClick={() => setView('rewards')} className="w-full py-4 bg-green-600 hover:bg-green-700 text-white text-lg font-bold rounded-2xl shadow-lg animate-pulse">
                         🎁 ¡TARJETA LLENA! CANJEAR PREMIO
                       </button>
                     ) : (
@@ -345,11 +314,7 @@ function App() {
                             <p className="text-sm text-slate-500">Costo: ⭐ {reward.cost}</p>
                             {reward.description && <p className="text-xs text-amber-600">{reward.description}</p>}
                           </div>
-                          <button 
-                            onClick={() => handleRedeem(reward.id)} 
-                            disabled={loading || !(activeCard && activeCard.is_completed)} 
-                            className={`px-4 py-2 rounded-lg font-bold text-sm transition ${(activeCard && activeCard.is_completed) ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
-                          >
+                          <button onClick={() => handleRedeem(reward.id)} disabled={loading || !(activeCard && activeCard.is_completed)} className={`px-4 py-2 rounded-lg font-bold text-sm transition ${(activeCard && activeCard.is_completed) ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}>
                             {activeCard && activeCard.is_completed ? 'Canjear' : 'Tarjeta no llena'}
                           </button>
                         </div>
@@ -365,17 +330,7 @@ function App() {
                   
                   <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                     <label className="block text-sm font-bold text-slate-700 mb-1">Apodo</label>
-                    {isEditingNickname ? (
-                      <div className="flex gap-2">
-                        <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} className="flex-1 p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500" maxLength={20} />
-                        <button onClick={updateNickname} className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Guardar</button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-slate-800">{nickname}</span>
-                        <button onClick={() => setIsEditingNickname(true)} className="text-sm text-amber-600 hover:text-amber-700 underline">Editar</button>
-                      </div>
-                    )}
+                    <p className="text-lg font-bold text-slate-800">{nickname}</p>
                   </div>
 
                   <div className="mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -398,51 +353,42 @@ function App() {
                 </div>
               )}
 
-              {/* BOTÓN OCULTO DEL ADMIN */}
               <div className="mt-6 pt-4 border-t border-slate-200">
-                <button 
-                  onClick={() => setShowAdminLogin(true)}
-                  className="w-full py-2 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 text-xs font-bold"
-                >
-                  🔒
-                </button>
+                <button onClick={() => setShowAdminLogin(true)} className="w-full py-2 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 text-xs font-bold">🔒</button>
               </div>
             </>
           ) : (
-            /* PANEL DEL ADMIN */
             <div className="mt-4 text-left">
               <h3 className="text-xl font-bold text-slate-800 text-center mb-4">🔒 Panel de Administración</h3>
               
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-white p-3 rounded-lg border border-slate-200 text-center">
-                  <p className="text-xs text-slate-500">📱 QRs Disponibles</p>
-                  <p className="text-2xl font-bold text-slate-800">{adminStats.availableQrs}</p>
+              <div className="bg-gradient-to-br from-amber-100 to-amber-50 rounded-3xl p-6 border-2 border-amber-300 mb-6 shadow-lg text-center">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="font-bold text-amber-800">TARJETA WIRANQA</span>
+                  <span className="text-xs text-amber-700 font-semibold bg-amber-200 px-2 py-1 rounded-full">Vista Admin</span>
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 text-center">
-                  <p className="text-xs text-slate-500">✅ QRs Usados</p>
-                  <p className="text-2xl font-bold text-slate-800">{adminStats.usedQrs}</p>
+
+                <div className="grid grid-cols-4 gap-2 justify-items-center mb-4">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <div key={index} className={`w-10 h-10 flex items-center justify-center rounded-full border-2 ${activeCard && index < activeCard.current_progress ? 'bg-amber-500 border-amber-600' : 'bg-white border-gray-300'}`}>
+                      <span className={`text-xl ${activeCard && index < activeCard.current_progress ? 'text-white' : 'text-gray-300'}`}>🍺</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 text-center">
-                  <p className="text-xs text-slate-500">🎁 Tarjetas Completadas</p>
-                  <p className="text-2xl font-bold text-slate-800">{adminStats.completedCards}</p>
-                </div>
-                <div className="bg-white p-3 rounded-lg border border-slate-200 text-center">
-                  <p className="text-xs text-slate-500">👥 Total Usuarios</p>
-                  <p className="text-2xl font-bold text-slate-800">{adminStats.totalUsers}</p>
-                </div>
+
+                {currentQRCode && (
+                  <div className="bg-white p-4 rounded-xl shadow-inner mb-4">
+                    <p className="text-xs text-slate-500 mb-2">📱 QR Vigente (Muestra este QR al cliente)</p>
+                    <p className="text-xs font-mono text-amber-700 break-all mb-2">{currentQRCode}</p>
+                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}/?code=${currentQRCode}`)}`} alt="QR" className="mx-auto w-40 h-40" />
+                  </div>
+                )}
+                
+                <button onClick={handleGenerateNewQR} className="w-full py-3 bg-amber-600 text-white font-bold rounded hover:bg-amber-700 mb-2">
+                  🔄 Generar Nuevo QR
+                </button>
               </div>
 
-              <button 
-                onClick={handleGenerateQr}
-                className="w-full py-3 bg-amber-600 text-white font-bold rounded hover:bg-amber-700 mb-4"
-              >
-                + Generar 5 Nuevos QRs
-              </button>
-
-              <button 
-                onClick={() => setIsAdminLogged(false)}
-                className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm"
-              >
+              <button onClick={() => setIsAdminLogged(false)} className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm">
                 ← Cerrar Sesión Admin
               </button>
             </div>
@@ -453,13 +399,7 @@ function App() {
               <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
                 <h3 className="text-xl font-bold text-slate-800 mb-4">🔒 Acceso Administrador</h3>
                 <div className="space-y-3">
-                  <input 
-                    type="password" 
-                    value={adminPassword} 
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500"
-                    placeholder="Contraseña"
-                  />
+                  <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500" placeholder="Contraseña" />
                   <button onClick={handleAdminLogin} className="w-full py-3 bg-amber-600 text-white font-bold rounded hover:bg-amber-700">Ingresar</button>
                   <button onClick={() => setShowAdminLogin(false)} className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm">Cancelar</button>
                 </div>
