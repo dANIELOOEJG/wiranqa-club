@@ -104,7 +104,7 @@ function App() {
     }
   };
 
-  // ✅ FUNCIÓN DE ESCANEO (Cuando se usa el botón)
+  // ✅ SOLUCIÓN AL PROBLEMA: La función que procesa el botón de escaneo con el ID del cliente
   const handleScan = (data) => {
     if (data && data.text && deviceId && !isProcessing.current) {
       processScan(data.text, deviceId);
