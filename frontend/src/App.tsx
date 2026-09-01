@@ -1,12 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+// @ts-ignore
+import QrReader from 'react-qr-scanner';
 
 function App() {
   const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com';
   const ADMIN_PASSWORD = 'wiranqa2026';
 
   const [points, setPoints] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [backendStatus, setBackendStatus] = useState('Desconocido');
+  const [scanning, setScanning] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [nickname, setNickname] = useState('Viajero WIRANQA');
   const [isRegistered, setIsRegistered] = useState(false);
@@ -24,6 +28,10 @@ function App() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminLogged, setIsAdminLogged] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
+
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const cameraMode = isMobile ? 'environment' : 'user';
+  const isProcessing = useRef(false);
 
   const getDeviceId = () => {
     let id = localStorage.getItem('wiranqa_device_id');
@@ -96,7 +104,16 @@ function App() {
     }
   };
 
+  // ✅ FUNCIÓN DE ESCANEO (Cuando se usa el botón)
+  const handleScan = (data) => {
+    if (data && data.text && deviceId && !isProcessing.current) {
+      processScan(data.text, deviceId);
+    }
+  };
+
   const processScan = async (code, id) => {
+    if (isProcessing.current) return;
+    isProcessing.current = true;
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
     try {
@@ -111,13 +128,18 @@ function App() {
         setActiveCard(data.data.card);
         setPoints(data.data.card.current_progress);
         setMessage(data.message);
+        setScanning(false);
       } else {
         setMessage(data.message || '❌ Ocurrió un error.');
+        setScanning(false);
       }
     } catch (error) {
+      setLoading(false);
+      setScanning(false);
       setMessage('❌ No pudimos conectar con el servidor.');
     } finally {
       setTimeout(() => setMessage(''), 4000);
+      isProcessing.current = false;
     }
   };
 
@@ -269,16 +291,22 @@ function App() {
                         ))}
                       </div>
 
-                      {/* ESTADO DE LA TARJETA */}
-                      <div className="flex justify-center">
+                      {/* ESTADO DE LA TARJETA + BOTÓN DE ESCANEO */}
+                      <div className="flex flex-col gap-3">
                         {activeCard && activeCard.is_completed ? (
                           <button onClick={() => setView('rewards')} className="px-8 py-4 bg-green-500 hover:bg-green-600 text-white text-lg font-bold rounded-2xl shadow-lg animate-pulse">
                             🎁 ¡TARJETA LLENA! CANJEAR PREMIO
                           </button>
+                        ) : scanning ? (
+                          <div className="rounded-xl overflow-hidden border-2 border-red-600 bg-black relative">
+                            <QrReader delay={300} onError={console.error} onScan={handleScan} style={{ width: '100%', height: '250px', objectFit: 'cover' }} constraints={{ video: { facingMode: cameraMode } }} />
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-44 h-44 border-2 border-amber-500 rounded-xl opacity-80"></div></div>
+                            <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">Cancelar</button>
+                          </div>
                         ) : (
-                          <p className="text-amber-200 text-sm font-medium">
-                            Escanea el QR para llenar tu tarjeta
-                          </p>
+                          <button onClick={() => setScanning(true)} disabled={loading || backendStatus !== 'Online'} className="w-full py-4 bg-red-600 hover:bg-red-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
+                            {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
+                          </button>
                         )}
                       </div>
                     </div>
