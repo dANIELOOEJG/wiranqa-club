@@ -24,6 +24,7 @@ function App() {
   // --- VISTA Y ADMIN ---
   const [view, setView] = useState('home');
   const [currentQRCode, setCurrentQRCode] = useState('');
+  const [qrImage, setQrImage] = useState(''); // 🔥 NUEVO ESTADO
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminLogged, setIsAdminLogged] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -220,14 +221,17 @@ function App() {
     }
   };
 
+  // 🔥 ACTUALIZADO: Genera QR y guarda la imagen del backend
   const handleGenerateNewQR = async () => {
     try {
       const res = await fetch(`${API_URL}/api/admin/generate-new-qr`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
       });
       const data = await res.json();
       if (data.success) {
         setCurrentQRCode(data.newCode);
+        setQrImage(data.qrImage);
         setMessage('✅ Nuevo QR generado. El anterior ya no funciona.');
         setTimeout(() => setMessage(''), 4000);
       }
@@ -375,11 +379,12 @@ function App() {
                   ))}
                 </div>
 
-                {currentQRCode && (
+                {/* 🔥 MOSTRAR QR CON IMAGEN */}
+                {qrImage && (
                   <div className="bg-white p-4 rounded-xl shadow-inner mb-4">
                     <p className="text-xs text-slate-500 mb-2">📱 QR Vigente (Muestra este QR al cliente)</p>
-                    <p className="text-xs font-mono text-amber-700 break-all mb-2">{currentQRCode}</p>
-                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}/?code=${currentQRCode}`)}`} alt="QR" className="mx-auto w-40 h-40" />
+                    <img src={qrImage} alt="QR" className="mx-auto w-40 h-40" />
+                    <p className="text-xs font-mono text-slate-500 mt-2 break-all">{currentQRCode}</p>
                   </div>
                 )}
                 
