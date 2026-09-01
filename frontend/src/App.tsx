@@ -1,16 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-// @ts-ignore
-import QrReader from 'react-qr-scanner';
+import React, { useState, useEffect } from 'react';
 
 function App() {
   const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com';
   const ADMIN_PASSWORD = 'wiranqa2026';
 
   const [points, setPoints] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [backendStatus, setBackendStatus] = useState('Desconocido');
-  const [scanning, setScanning] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [nickname, setNickname] = useState('Viajero WIRANQA');
   const [isRegistered, setIsRegistered] = useState(false);
@@ -28,10 +24,6 @@ function App() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminLogged, setIsAdminLogged] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
-
-  const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-  const cameraMode = isMobile ? 'environment' : 'user';
-  const isProcessing = useRef(false);
 
   const getDeviceId = () => {
     let id = localStorage.getItem('wiranqa_device_id');
@@ -94,7 +86,7 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
-  // DETECCIÓN AUTOMÁTICA DEL QR DESDE EL CELULAR
+  // ✅ DETECCIÓN AUTOMÁTICA DEL QR (Cuando el cliente escanea con la cámara del celular)
   const handleAutoScanFromURL = async (id) => {
     const params = new URLSearchParams(window.location.search);
     const qrCode = params.get('code');
@@ -105,8 +97,6 @@ function App() {
   };
 
   const processScan = async (code, id) => {
-    if (isProcessing.current) return;
-    isProcessing.current = true;
     setLoading(true);
     setMessage('⏳ Verificando tu WIRANQA...');
     try {
@@ -121,24 +111,13 @@ function App() {
         setActiveCard(data.data.card);
         setPoints(data.data.card.current_progress);
         setMessage(data.message);
-        setScanning(false);
       } else {
         setMessage(data.message || '❌ Ocurrió un error.');
-        setScanning(false);
       }
     } catch (error) {
-      setLoading(false);
-      setScanning(false);
       setMessage('❌ No pudimos conectar con el servidor.');
     } finally {
       setTimeout(() => setMessage(''), 4000);
-      isProcessing.current = false;
-    }
-  };
-
-  const handleScan = (data) => {
-    if (data && data.text && deviceId && !isProcessing.current) {
-      processScan(data.text, deviceId);
     }
   };
 
@@ -202,14 +181,13 @@ function App() {
     }
   };
 
-  // ✅ CORREGIDO: Ahora guarda el código Y la imagen
   const fetchCurrentQR = async () => {
     try {
       const res = await fetch(`${API_URL}/api/admin/current-qr`);
       const data = await res.json();
       if (data.code) {
         setCurrentQRCode(data.code);
-        setQrImage(data.qrImage); // 🔥 IMAGEN GUARDADA
+        setQrImage(data.qrImage);
       }
     } catch (e) { console.error(e); }
   };
@@ -218,14 +196,13 @@ function App() {
     if (adminPassword === ADMIN_PASSWORD) {
       setIsAdminLogged(true);
       setShowAdminLogin(false);
-      await fetchCurrentQR(); // Al entrar, carga el QR
+      await fetchCurrentQR();
     } else {
       setMessage('❌ Contraseña incorrecta.');
       setTimeout(() => setMessage(''), 4000);
     }
   };
 
-  // ✅ CORREGIDO: Genera QR y muestra la imagen al instante
   const handleGenerateNewQR = async () => {
     try {
       const res = await fetch(`${API_URL}/api/admin/generate-new-qr`, {
@@ -235,7 +212,7 @@ function App() {
       const data = await res.json();
       if (data.success) {
         setCurrentQRCode(data.newCode);
-        setQrImage(data.qrImage); // 🔥 IMAGEN NUEVA
+        setQrImage(data.qrImage);
         setMessage('✅ Nuevo QR generado. El anterior ya no funciona.');
         setTimeout(() => setMessage(''), 4000);
       }
@@ -247,7 +224,7 @@ function App() {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6 border border-amber-200 relative overflow-hidden">
         <div className="relative z-10 text-center">
           <div className="flex flex-col items-center mb-4">
-            <img src="/logo.png" alt="WIRANQA" className="h-20 object-contain mb-2" />
+            <img src="/logo.png" alt="WIRANQA" className="h-24 object-contain mb-2" />
             <h1 className="text-2xl font-bold text-amber-700 tracking-wider">WIRANQA CLUB</h1>
             <p className="text-xs text-slate-500 font-medium tracking-widest">Cerveza Artesanal Ayacuchana</p>
           </div>
@@ -260,7 +237,7 @@ function App() {
 
           {!isAdminLogged ? (
             <>
-              <div className="flex justify-center gap-4 mb-4 flex-wrap">
+              <div className="flex justify-center gap-4 mb-6 flex-wrap">
                 <button onClick={() => setView('home')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'home' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>🏠 Inicio</button>
                 <button onClick={() => setView('rewards')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'rewards' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>🎁 Premios</button>
                 <button onClick={() => setView('profile')} className={`text-sm font-bold px-3 py-1 rounded-lg ${view === 'profile' ? 'bg-amber-600 text-white' : 'text-slate-500'}`}>👤 Perfil</button>
@@ -268,43 +245,44 @@ function App() {
 
               {view === 'home' && (
                 <>
-                  <div className="bg-gradient-to-br from-amber-100 to-amber-50 rounded-3xl p-6 border-2 border-amber-300 mb-6 shadow-lg">
-                    <div className="flex justify-between items-center mb-4">
-                      <div className="flex items-center gap-2">
-                        <img src="/logo.png" alt="WIRANQA" className="h-10 object-contain" />
-                        <span className="font-bold text-amber-800">TARJETA WIRANQA</span>
-                      </div>
-                      <span className="text-xs text-amber-700 font-semibold bg-amber-200 px-2 py-1 rounded-full">
-                        {activeCard ? `${activeCard.current_progress}/${activeCard.total_slots}` : '0/8'}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-2 justify-items-center mb-4">
-                      {Array.from({ length: 8 }).map((_, index) => (
-                        <div key={index} className={`w-10 h-10 flex items-center justify-center rounded-full border-2 ${activeCard && index < activeCard.current_progress ? 'bg-amber-500 border-amber-600' : 'bg-white border-gray-300'}`}>
-                          <span className={`text-xl ${activeCard && index < activeCard.current_progress ? 'text-white' : 'text-gray-300'}`}>🍺</span>
+                  {/* TARJETA WIRANQA PREMIUM */}
+                  <div className="bg-gradient-to-br from-slate-900 via-amber-900 to-amber-600 rounded-3xl p-8 shadow-2xl border-2 border-amber-300 mb-6 relative overflow-hidden">
+                    {/* Decoración */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/20 rounded-full blur-3xl" />
+                    
+                    <div className="relative z-10">
+                      <div className="flex justify-between items-start mb-8">
+                        <div>
+                          <img src="/logo.png" alt="WIRANQA" className="h-14 object-contain mb-2" />
+                          <p className="text-amber-200 text-xs font-bold tracking-widest">TARJETA WIRANQA</p>
                         </div>
-                      ))}
-                    </div>
+                        <div className="bg-amber-500 text-slate-900 text-xs font-bold px-3 py-1 rounded-full">
+                          {activeCard ? `${activeCard.current_progress}/${activeCard.total_slots}` : '0/8'}
+                        </div>
+                      </div>
 
-                    {activeCard && activeCard.is_completed ? (
-                      <button onClick={() => setView('rewards')} className="w-full py-4 bg-green-600 hover:bg-green-700 text-white text-lg font-bold rounded-2xl shadow-lg animate-pulse">
-                        🎁 ¡TARJETA LLENA! CANJEAR PREMIO
-                      </button>
-                    ) : (
-                      <button onClick={() => setScanning(true)} disabled={loading || backendStatus !== 'Online'} className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
-                        {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
-                      </button>
-                    )}
+                      <div className="grid grid-cols-4 gap-4 justify-items-center mb-8">
+                        {Array.from({ length: 8 }).map((_, index) => (
+                          <div key={index} className={`w-12 h-12 flex items-center justify-center rounded-full border-2 transition-all duration-300 ${activeCard && index < activeCard.current_progress ? 'bg-amber-500 border-amber-200 shadow-lg shadow-amber-500/50' : 'bg-white/10 border-white/20'}`}>
+                            <span className={`text-2xl ${activeCard && index < activeCard.current_progress ? '' : 'opacity-40'}`}>🍺</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* ESTADO DE LA TARJETA */}
+                      <div className="flex justify-center">
+                        {activeCard && activeCard.is_completed ? (
+                          <button onClick={() => setView('rewards')} className="px-8 py-4 bg-green-500 hover:bg-green-600 text-white text-lg font-bold rounded-2xl shadow-lg animate-pulse">
+                            🎁 ¡TARJETA LLENA! CANJEAR PREMIO
+                          </button>
+                        ) : (
+                          <p className="text-amber-200 text-sm font-medium">
+                            Escanea el QR para llenar tu tarjeta
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-
-                  {scanning ? (
-                    <div className="rounded-xl overflow-hidden border-2 border-amber-600 bg-black relative">
-                      <QrReader delay={300} onError={console.error} onScan={handleScan} style={{ width: '100%', height: '250px', objectFit: 'cover' }} constraints={{ video: { facingMode: cameraMode } }} />
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-44 h-44 border-2 border-amber-500 rounded-xl opacity-80"></div></div>
-                      <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">Cancelar</button>
-                    </div>
-                  ) : null}
                 </>
               )}
 
@@ -383,7 +361,6 @@ function App() {
                   ))}
                 </div>
 
-                {/* ✅ MOSTRAR QR CON IMAGEN */}
                 {qrImage && (
                   <div className="bg-white p-4 rounded-xl shadow-inner mb-4">
                     <p className="text-xs text-slate-500 mb-2">📱 QR Vigente (Muestra este QR al cliente)</p>
