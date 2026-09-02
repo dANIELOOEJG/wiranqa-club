@@ -2,15 +2,23 @@ const express = require('express');
 const helmet = require('helmet');
 const { createClient } = require('@supabase/supabase-js');
 const QRCode = require('qrcode');
+const { z } = require('zod');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- SEGURIDAD Y CORS ---
+// --- CORS dinámico desde .env ---
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim());
+
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin) || !origin) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
@@ -18,42 +26,58 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '10mb' }));
 
-// --- CONEXIÓN A SUPABASE ---
-const supabaseUrl = 'https://qwjjrwiurhyoszhlsdgd.supabase.co';
-const supabaseKey = 'sb_publishable_mnBY2b4fmjt9NdwmtBBt2A_L-avhMjm';
+// --- Supabase desde variables de entorno ---
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ Faltan variables de entorno SUPABASE_URL o SUPABASE_ANON_KEY');
+  process.exit(1);
+}
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { persistSession: false },
   headers: { 'apikey': supabaseKey }
 });
-
 console.log('✅ Conectado a Supabase vía API REST');
 
-// --- RUTA DE SALUD ---
+// --- ESQUEMAS ZOD ---
+const scanSchema = z.object({
+  code: z.string().min(1, 'El código es obligatorio'),
+  deviceId: z.string().min(1, 'El deviceId es obligatorio')
+});
+
+const registerSchema = z.object({
+  deviceId: z.string().min(1, 'deviceId obligatorio'),
+  name: z.string().min(1, 'Nombre obligatorio'),
+  dni: z.string().regex(/^\d{8,9}$/, 'DNI debe tener 8 o 9 dígitos'),
+  phone: z.string().regex(/^\d{9}$/, 'Teléfono debe tener 9 dígitos'),
+  email: z.string().email('Correo electrónico inválido')
+});
+
+const redeemSchema = z.object({
+  deviceId: z.string().min(1, 'deviceId obligatorio'),
+  rewardId: z.string().min(1, 'rewardId obligatorio')
+});
+
+// --- HEALTH ---
 app.get('/health', (req, res) => res.json({ status: 'ok', message: 'WIRANQA Backend running' }));
 
-// --- RUTA PARA ESCANEAR QR (ÚNICO) ---
+// --- ESCANEAR QR ---
 app.post('/api/scan', async (req, res) => {
-  const rawCode = req.body.code;
-  const rawDeviceId = req.body.deviceId;
-  const code = rawCode ? rawCode.trim() : '';
-  const deviceId = rawDeviceId ? rawDeviceId.trim() : '';
-
-  if (!code || !deviceId) return res.status(400).json({ message: 'Datos incompletos' });
-
   try {
+    const { code, deviceId } = scanSchema.parse(req.body);
+
     const { data: qr, error } = await supabase
       .from('dynamic_qrs')
       .select('*')
       .eq('code', code)
       .maybeSingle();
 
+    if (error) throw new Error(error.message);
     if (!qr) return res.status(404).json({ message: '❌ Este QR no está registrado.' });
     if (qr.is_used) return res.status(400).json({ message: '⚠️ Este QR ya fue escaneado.' });
 
-    // Marcar como usado
     await supabase.from('dynamic_qrs').update({ is_used: true, used_by: deviceId }).eq('id', qr.id);
 
-    // Obtener o crear tarjeta del cliente
     let { data: activeCard } = await supabase
       .from('loyalty_cards')
       .select('*')
@@ -67,11 +91,10 @@ app.post('/api/scan', async (req, res) => {
         .insert({ device_id: deviceId, current_progress: 0, total_slots: 8 })
         .select('*')
         .single();
-      if (cardError) return res.status(500).json({ message: `Error: ${cardError.message}` });
+      if (cardError) throw new Error(cardError.message);
       activeCard = newCard;
     }
 
-    // Sumar progreso
     const newProgress = activeCard.current_progress + 1;
     const isCompleted = newProgress >= activeCard.total_slots;
 
@@ -82,7 +105,6 @@ app.post('/api/scan', async (req, res) => {
       .select('*')
       .single();
 
-    // Registrar historial
     await supabase.from('history').insert({ device_id: deviceId, action_type: 'scan', qr_code: code });
 
     res.json({
@@ -92,17 +114,19 @@ app.post('/api/scan', async (req, res) => {
     });
 
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Datos inválidos', details: err.errors });
+    }
     console.error('❌ Error en /api/scan:', err.message);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 });
 
-// --- REGISTRO DE USUARIO (VALIDACIÓN ÚNICA) ---
+// --- REGISTRO DE USUARIO (con UPSERT) ---
 app.post('/api/user/register', async (req, res) => {
-  const { deviceId, name, dni, phone, email } = req.body;
-  if (!deviceId || !name || !dni || !phone || !email) return res.status(400).json({ error: 'Todos los campos son obligatorios' });
-
   try {
+    const { deviceId, name, dni, phone, email } = registerSchema.parse(req.body);
+
     const { data: existingUser } = await supabase
       .from('users')
       .select('*')
@@ -115,19 +139,29 @@ app.post('/api/user/register', async (req, res) => {
       if (existingUser.email === email) return res.status(409).json({ error: 'Este correo ya está registrado.' });
     }
 
-    const { error } = await supabase.from('users').update({ name, dni, phone, email }).eq('device_id', deviceId);
-    if (error) return res.status(500).json({ error: error.message });
+    // UPSERT: si device_id existe, actualiza; si no, crea
+    const { error } = await supabase
+      .from('users')
+      .upsert({ device_id: deviceId, name, dni, phone, email }, { onConflict: 'device_id' });
+
+    if (error) throw new Error(error.message);
     res.json({ success: true, message: '✅ Registro completado exitosamente.' });
 
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Datos inválidos', details: err.errors });
+    }
     console.error('❌ Error en /api/user/register:', err.message);
     res.status(500).json({ error: 'Error interno' });
   }
 });
 
-// --- OBTENER DATOS DEL USUARIO ---
+// --- OBTENER DATOS DEL USUARIO (con validación de deviceId) ---
 app.get('/api/user/:deviceId', async (req, res) => {
   const { deviceId } = req.params;
+  if (!deviceId || deviceId.trim() === '') {
+    return res.status(400).json({ error: 'deviceId es requerido' });
+  }
   try {
     const { data: user } = await supabase.from('users').select('*').eq('device_id', deviceId).maybeSingle();
     const { data: activeCard } = await supabase.from('loyalty_cards').select('*').eq('device_id', deviceId).eq('is_completed', false).maybeSingle();
@@ -149,22 +183,37 @@ app.get('/api/user/:deviceId', async (req, res) => {
   }
 });
 
-// --- CANJEAR TARJETA ---
+// --- CANJEAR TARJETA (con verificación de canje duplicado) ---
 app.post('/api/redeem', async (req, res) => {
-  const { deviceId, rewardId } = req.body;
-  if (!deviceId || !rewardId) return res.status(400).json({ error: 'Datos incompletos' });
-
   try {
-    let { data: activeCard } = await supabase.from('loyalty_cards').select('*').eq('device_id', deviceId).eq('is_completed', true).maybeSingle();
+    const { deviceId, rewardId } = redeemSchema.parse(req.body);
+
+    let { data: activeCard } = await supabase
+      .from('loyalty_cards')
+      .select('*')
+      .eq('device_id', deviceId)
+      .eq('is_completed', true)
+      .maybeSingle();
+
     if (!activeCard) return res.status(400).json({ message: '❌ No tienes una tarjeta llena.' });
+    if (activeCard.redeemed_at) return res.status(400).json({ message: '❌ Esta tarjeta ya fue canjeada.' });
 
     await supabase.from('loyalty_cards').update({ redeemed_at: new Date().toISOString() }).eq('id', activeCard.id);
-    const { data: newCard } = await supabase.from('loyalty_cards').insert({ device_id: deviceId, current_progress: 0, total_slots: 8 }).select('*').single();
+
+    const { data: newCard } = await supabase
+      .from('loyalty_cards')
+      .insert({ device_id: deviceId, current_progress: 0, total_slots: 8 })
+      .select('*')
+      .single();
 
     await supabase.from('history').insert({ device_id: deviceId, action_type: 'redeem', qr_code: `PREMIUM-${rewardId}` });
 
     res.json({ success: true, message: '🎉 ¡Premio canjeado! Se te ha otorgado una nueva tarjeta en blanco.', data: { newCard } });
+
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Datos inválidos', details: err.errors });
+    }
     console.error('❌ Error en /api/redeem:', err.message);
     res.status(500).json({ error: 'Error interno' });
   }
@@ -180,9 +229,7 @@ app.get('/api/rewards', async (req, res) => {
   }
 });
 
-// --- RUTAS DE ADMIN ---
-
-// 1. Obtener el QR actual (si no existe, lo genera)
+// --- ADMIN: Obtener QR actual ---
 app.get('/api/admin/current-qr', async (req, res) => {
   try {
     const { data } = await supabase.from('dynamic_qrs').select('*').eq('is_used', false).order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -190,35 +237,39 @@ app.get('/api/admin/current-qr', async (req, res) => {
     if (!data) {
       const newCode = `WIRANQA-ADMIN-${Date.now()}`;
       const { error } = await supabase.from('dynamic_qrs').insert({ code: newCode });
-      if (error) return res.status(500).json({ error: error.message });
-      const qrImage = await QRCode.toDataURL(`https://wiranqa-club-sepia.vercel.app/?code=${newCode}`);
+      if (error) throw new Error(error.message);
+      const frontendUrl = process.env.FRONTEND_URL || 'https://wiranqa.com';
+      const qrImage = await QRCode.toDataURL(`${frontendUrl}/?code=${newCode}`);
       return res.json({ code: newCode, qrImage });
     }
 
-    const qrImage = await QRCode.toDataURL(`https://wiranqa-club-sepia.vercel.app/?code=${data.code}`);
+    const frontendUrl = process.env.FRONTEND_URL || 'https://wiranqa.com';
+    const qrImage = await QRCode.toDataURL(`${frontendUrl}/?code=${data.code}`);
     res.json({ code: data.code, qrImage });
+
   } catch (err) {
     console.error('❌ Error en /api/admin/current-qr:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error interno' });
   }
 });
 
-// 2. Generar un nuevo QR (El anterior muere)
+// --- ADMIN: Generar nuevo QR ---
 app.post('/api/admin/generate-new-qr', async (req, res) => {
   try {
     await supabase.from('dynamic_qrs').update({ is_used: true }).eq('is_used', false);
 
     const newCode = `WIRANQA-ADMIN-${Date.now()}`;
     const { error: insertError } = await supabase.from('dynamic_qrs').insert({ code: newCode });
-    if (insertError) return res.status(500).json({ error: insertError.message });
+    if (insertError) throw new Error(insertError.message);
 
-    const QRCode = require('qrcode');
-    const qrImage = await QRCode.toDataURL(`https://wiranqa-club-sepia.vercel.app/?code=${newCode}`);
+    const frontendUrl = process.env.FRONTEND_URL || 'https://wiranqa.com';
+    const qrImage = await QRCode.toDataURL(`${frontendUrl}/?code=${newCode}`);
 
     res.json({ success: true, newCode, qrImage });
+
   } catch (err) {
     console.error('❌ Error en /api/admin/generate-new-qr:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Error interno' });
   }
 });
 
