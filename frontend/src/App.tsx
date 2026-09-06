@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-// @ts-ignore
-import QrReader from 'react-qr-scanner';
+import QrScanner from './components/QrScanner';
 
 function App() {
-  const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com';
-  const ADMIN_PASSWORD = 'wiranqa2026';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com/api';
+  const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wiranqa2026';
 
   const [points, setPoints] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -21,7 +20,7 @@ function App() {
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [userData, setUserData] = useState({ name: '', dni: '', phone: '', email: '' });
 
-  // --- VISTA Y ADMIN ---
+  // Vista y Admin
   const [view, setView] = useState('home');
   const [currentQRCode, setCurrentQRCode] = useState('');
   const [qrImage, setQrImage] = useState('');
@@ -30,7 +29,6 @@ function App() {
   const [adminPassword, setAdminPassword] = useState('');
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-  const cameraMode = isMobile ? 'environment' : 'user';
   const isProcessing = useRef(false);
 
   const getDeviceId = () => {
@@ -42,7 +40,7 @@ function App() {
     return id;
   };
 
-  // KEEP ALIVE
+  // Keep Alive
   useEffect(() => {
     const keepAlive = async () => {
       try { await fetch(`${API_URL}/health`); } catch (e) {}
@@ -50,7 +48,7 @@ function App() {
     keepAlive();
     const interval = setInterval(keepAlive, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [API_URL]);
 
   useEffect(() => {
     const id = getDeviceId();
@@ -94,20 +92,12 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
-  // ✅ DETECCIÓN AUTOMÁTICA DEL QR (Cuando el cliente escanea con la cámara del celular)
   const handleAutoScanFromURL = async (id) => {
     const params = new URLSearchParams(window.location.search);
     const qrCode = params.get('code');
     if (qrCode) {
       window.history.replaceState({}, document.title, window.location.pathname);
       await processScan(qrCode, id);
-    }
-  };
-
-  // ✅ SOLUCIÓN AL PROBLEMA: La función que procesa el botón de escaneo con el ID del cliente
-  const handleScan = (data) => {
-    if (data && data.text && deviceId && !isProcessing.current) {
-      processScan(data.text, deviceId);
     }
   };
 
@@ -129,6 +119,8 @@ function App() {
         setPoints(data.data.card.current_progress);
         setMessage(data.message);
         setScanning(false);
+        // Refrescar datos del usuario
+        await fetchUserData(id);
       } else {
         setMessage(data.message || '❌ Ocurrió un error.');
         setScanning(false);
@@ -163,6 +155,8 @@ function App() {
         setPoints(0);
         setTotalCompletedCards(prev => prev + 1);
         setMessage(data.message);
+        // Refrescar datos
+        await fetchUserData(deviceId);
       } else {
         setMessage(data.message);
       }
@@ -192,6 +186,8 @@ function App() {
         setIsRegistered(true);
         setShowRegisterForm(false);
         setMessage('✅ Registro completado.');
+        // Refrescar datos
+        await fetchUserData(deviceId);
         setTimeout(() => setMessage(''), 4000);
       } else {
         setMessage(data.error || '❌ Error al registrar.');
@@ -226,6 +222,9 @@ function App() {
   };
 
   const handleGenerateNewQR = async () => {
+    if (!window.confirm('⚠️ ¿Estás seguro de generar un nuevo QR? El anterior dejará de funcionar.')) {
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/api/admin/generate-new-qr`, {
         method: 'POST',
@@ -267,9 +266,7 @@ function App() {
 
               {view === 'home' && (
                 <>
-                  {/* TARJETA WIRANQA PREMIUM */}
                   <div className="bg-gradient-to-br from-slate-900 via-amber-900 to-amber-600 rounded-3xl p-8 shadow-2xl border-2 border-amber-300 mb-6 relative overflow-hidden">
-                    {/* Decoración */}
                     <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/20 rounded-full blur-3xl" />
                     
                     <div className="relative z-10">
@@ -291,18 +288,21 @@ function App() {
                         ))}
                       </div>
 
-                      {/* ESTADO DE LA TARJETA + BOTÓN DE ESCANEO */}
                       <div className="flex flex-col gap-3">
                         {activeCard && activeCard.is_completed ? (
                           <button onClick={() => setView('rewards')} className="px-8 py-4 bg-green-500 hover:bg-green-600 text-white text-lg font-bold rounded-2xl shadow-lg animate-pulse">
                             🎁 ¡TARJETA LLENA! CANJEAR PREMIO
                           </button>
                         ) : scanning ? (
-                          <div className="rounded-xl overflow-hidden border-2 border-red-600 bg-black relative">
-                            <QrReader delay={300} onError={console.error} onScan={handleScan} style={{ width: '100%', height: '250px', objectFit: 'cover' }} constraints={{ video: { facingMode: cameraMode } }} />
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-44 h-44 border-2 border-amber-500 rounded-xl opacity-80"></div></div>
-                            <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">Cancelar</button>
-                          </div>
+                          <QrScanner
+                            onScanSuccess={(decodedText) => {
+                              processScan(decodedText, deviceId);
+                            }}
+                            onScanError={(error) => {
+                              console.warn('Error de escaneo:', error);
+                            }}
+                            onClose={() => setScanning(false)}
+                          />
                         ) : (
                           <button onClick={() => setScanning(true)} disabled={loading || backendStatus !== 'Online'} className="w-full py-4 bg-red-600 hover:bg-red-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
                             {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
