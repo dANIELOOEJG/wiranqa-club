@@ -1,8 +1,9 @@
+// src/App.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import QrScanner from './components/QrScanner';
 
 function App() {
-  const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com/api';
+  const API_URL = import.meta.env.VITE_API_URL || 'https://wiranqa-backend.onrender.com';
   const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wiranqa2026';
 
   const [points, setPoints] = useState(0);
@@ -20,7 +21,7 @@ function App() {
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [userData, setUserData] = useState({ name: '', dni: '', phone: '', email: '' });
 
-  // Vista y Admin
+  // --- VISTA Y ADMIN ---
   const [view, setView] = useState('home');
   const [currentQRCode, setCurrentQRCode] = useState('');
   const [qrImage, setQrImage] = useState('');
@@ -29,6 +30,7 @@ function App() {
   const [adminPassword, setAdminPassword] = useState('');
 
   const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const cameraMode = isMobile ? 'environment' : 'user';
   const isProcessing = useRef(false);
 
   const getDeviceId = () => {
@@ -40,7 +42,7 @@ function App() {
     return id;
   };
 
-  // Keep Alive
+  // KEEP ALIVE
   useEffect(() => {
     const keepAlive = async () => {
       try { await fetch(`${API_URL}/health`); } catch (e) {}
@@ -48,7 +50,7 @@ function App() {
     keepAlive();
     const interval = setInterval(keepAlive, 60000);
     return () => clearInterval(interval);
-  }, [API_URL]);
+  }, []);
 
   useEffect(() => {
     const id = getDeviceId();
@@ -101,6 +103,13 @@ function App() {
     }
   };
 
+  // Escaneo manual (desde el botón)
+  const handleScan = (data) => {
+    if (data && deviceId && !isProcessing.current) {
+      processScan(data, deviceId);
+    }
+  };
+
   const processScan = async (code, id) => {
     if (isProcessing.current) return;
     isProcessing.current = true;
@@ -119,8 +128,6 @@ function App() {
         setPoints(data.data.card.current_progress);
         setMessage(data.message);
         setScanning(false);
-        // Refrescar datos del usuario
-        await fetchUserData(id);
       } else {
         setMessage(data.message || '❌ Ocurrió un error.');
         setScanning(false);
@@ -155,8 +162,6 @@ function App() {
         setPoints(0);
         setTotalCompletedCards(prev => prev + 1);
         setMessage(data.message);
-        // Refrescar datos
-        await fetchUserData(deviceId);
       } else {
         setMessage(data.message);
       }
@@ -186,8 +191,6 @@ function App() {
         setIsRegistered(true);
         setShowRegisterForm(false);
         setMessage('✅ Registro completado.');
-        // Refrescar datos
-        await fetchUserData(deviceId);
         setTimeout(() => setMessage(''), 4000);
       } else {
         setMessage(data.error || '❌ Error al registrar.');
@@ -222,9 +225,6 @@ function App() {
   };
 
   const handleGenerateNewQR = async () => {
-    if (!window.confirm('⚠️ ¿Estás seguro de generar un nuevo QR? El anterior dejará de funcionar.')) {
-      return;
-    }
     try {
       const res = await fetch(`${API_URL}/api/admin/generate-new-qr`, {
         method: 'POST',
@@ -294,15 +294,10 @@ function App() {
                             🎁 ¡TARJETA LLENA! CANJEAR PREMIO
                           </button>
                         ) : scanning ? (
-                          <QrScanner
-                            onScanSuccess={(decodedText) => {
-                              processScan(decodedText, deviceId);
-                            }}
-                            onScanError={(error) => {
-                              console.warn('Error de escaneo:', error);
-                            }}
-                            onClose={() => setScanning(false)}
-                          />
+                          <div className="rounded-xl overflow-hidden border-2 border-red-600 bg-black relative">
+                            <QrScanner onScan={handleScan} facingMode={cameraMode} />
+                            <button onClick={() => setScanning(false)} className="w-full py-3 bg-slate-900 text-white font-bold">Cancelar</button>
+                          </div>
                         ) : (
                           <button onClick={() => setScanning(true)} disabled={loading || backendStatus !== 'Online'} className="w-full py-4 bg-red-600 hover:bg-red-700 text-white text-lg font-bold rounded-2xl shadow-lg transition-all active:scale-95">
                             {loading ? '⏳ Procesando...' : '📷 Escanear tu WIRANQA'}
